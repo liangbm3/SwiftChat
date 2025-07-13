@@ -32,4 +32,7 @@ set(CMAKE_INSTALL_PREFIX "${CMAKE_BINARY_DIR}")
 # 添加src子目录到构建系统
 add_subdirectory(src)
 
+# 添加测试目录到构建系统
+add_subdirectory(tests)
+
 
