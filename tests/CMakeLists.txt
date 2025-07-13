@@ -18,9 +18,14 @@ add_executable(test_database_manager
     ../src/chat/user.cpp
 )
 
+# 创建线程池测试可执行文件
+add_executable(test_thread_pool 
+    utils/test_thread_pool.cpp
+)
+
 # 链接必要的库
 target_link_libraries(test_user 
-    ${CMAKE_THREAD_LIBS_INIT}
+    ${CMAKE_THREAD_LIBS_INIT}# 链接线程库  
 )
 
 target_link_libraries(test_logger 
@@ -29,6 +34,10 @@ target_link_libraries(test_logger
 
 target_link_libraries(test_database_manager 
     sqlite3
+    ${CMAKE_THREAD_LIBS_INIT}
+)
+
+target_link_libraries(test_thread_pool
     ${CMAKE_THREAD_LIBS_INIT}
 )
 
@@ -45,6 +54,10 @@ set_target_properties(test_database_manager PROPERTIES
     RUNTIME_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/tests
 )
 
+set_target_properties(test_thread_pool PROPERTIES
+    RUNTIME_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/tests
+)
+
 # 包含必要的头文件目录
 target_include_directories(test_user PRIVATE
     ${CMAKE_SOURCE_DIR}/src
@@ -56,7 +69,18 @@ target_include_directories(test_logger PRIVATE
     ${CMAKE_SOURCE_DIR}/third_party
 )
 
+target_include_directories(test_database_manager PRIVATE
+    ${CMAKE_SOURCE_DIR}/src
+    
+)
+
+target_include_directories(test_thread_pool PRIVATE
+    ${CMAKE_SOURCE_DIR}/src
+    
+)
+
 # 如果使用CTest，可以添加测试
 enable_testing()
 add_test(NAME UserTests COMMAND test_user)
 add_test(NAME LoggerTests COMMAND test_logger)
+add_test(NAME ThreadPoolTests COMMAND test_thread_pool)
