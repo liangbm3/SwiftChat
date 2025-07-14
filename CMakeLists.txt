@@ -35,4 +35,7 @@ add_subdirectory(src)
 # 添加测试目录到构建系统
 add_subdirectory(tests)
 
+# 添加例子目录到构建系统
+add_subdirectory(examples)
+
 

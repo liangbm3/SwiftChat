@@ -50,6 +50,13 @@ add_executable(test_http_server
     ../src/utils/logger.cpp
 )
 
+# 创建WebSocket服务器测试可执行文件
+add_executable(test_websocket_server 
+    websocket/test_websocket_server.cpp
+    ../src/websocket/websocket_server.cpp
+    ../src/utils/logger.cpp
+)
+
 # 链接必要的库
 target_link_libraries(test_user 
     ${CMAKE_THREAD_LIBS_INIT}# 链接线程库  
@@ -84,6 +91,10 @@ target_link_libraries(test_http_server
     ${CMAKE_THREAD_LIBS_INIT}
 )
 
+target_link_libraries(test_websocket_server
+    ${CMAKE_THREAD_LIBS_INIT}
+)
+
 # 设置测试可执行文件的输出目录
 set_target_properties(test_user PROPERTIES
     RUNTIME_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/tests
@@ -114,6 +125,10 @@ set_target_properties(test_http_response PROPERTIES
 )
 
 set_target_properties(test_http_server PROPERTIES
+    RUNTIME_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/tests
+)
+
+set_target_properties(test_websocket_server PROPERTIES
     RUNTIME_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/tests
 )
 
@@ -158,6 +173,12 @@ target_include_directories(test_http_server PRIVATE
     
 )
 
+target_include_directories(test_websocket_server PRIVATE
+    ${CMAKE_SOURCE_DIR}/src
+    ${CMAKE_SOURCE_DIR}/third_party
+    ${CMAKE_SOURCE_DIR}/third_party/websocketpp
+)
+
 # 如果使用CTest，可以添加测试
 enable_testing()
 add_test(NAME UserTests COMMAND test_user)
@@ -168,3 +189,4 @@ add_test(NAME TimerTests COMMAND test_timer)
 add_test(NAME HttpRequestTests COMMAND test_http_request)
 add_test(NAME HttpResponseTests COMMAND test_http_response)
 add_test(NAME HttpServerTests COMMAND test_http_server)
+add_test(NAME WebSocketServerTests COMMAND test_websocket_server)
