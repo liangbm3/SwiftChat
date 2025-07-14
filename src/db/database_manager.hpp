@@ -26,6 +26,7 @@ public:
     // 房间操作
     bool createRoom(const std::string &name, const std::string &creator);//创建房间
     bool deleteRoom(const std::string &name);//删除房间
+    bool roomExists(const std::string &name);//房间是否存在
     std::vector<std::string> getRooms();//获取所有房间
 
     // 房间成员操作

@@ -238,6 +238,26 @@ bool DatabaseManager::deleteRoom(const std::string &name)
     return success;
 }
 
+bool DatabaseManager::roomExists(const std::string &name)
+{
+    std::lock_guard<std::recursive_mutex> lock(mutex_);
+    const char *sql = "SELECT COUNT(*) FROM rooms WHERE name = ?;";
+    sqlite3_stmt *stmt;
+    if (sqlite3_prepare_v2(db_, sql, -1, &stmt, nullptr) != SQLITE_OK)
+    {
+        LOG_ERROR << "Failed to prepare statement: " << sqlite3_errmsg(db_);
+        return false;
+    }
+    sqlite3_bind_text(stmt, 1, name.c_str(), -1, SQLITE_STATIC);
+    bool exists = false;
+    if (sqlite3_step(stmt) == SQLITE_ROW)
+    {
+        exists = (sqlite3_column_int(stmt, 0) > 0);
+    }
+    sqlite3_finalize(stmt);
+    return exists;
+}
+
 std::vector<std::string> DatabaseManager::getRooms()
 {
     std::lock_guard<std::recursive_mutex> lock(mutex_);
