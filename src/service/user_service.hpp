@@ -22,4 +22,5 @@ private:
     http::HttpResponse handleRegister(const http::HttpRequest &request);
     // 处理用户登录请求
     http::HttpResponse handleLogin(const http::HttpRequest &request);
+    DatabaseManager& db_manager_; // 数据库管理器引用
 };
