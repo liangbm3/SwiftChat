@@ -35,6 +35,12 @@ add_executable(test_http_request
     ../src/http/http_request.cpp
 )
 
+# 创建HTTP响应测试可执行文件
+add_executable(test_http_response 
+    http/test_http_response.cpp
+    ../src/http/http_response.cpp
+)
+
 # 链接必要的库
 target_link_libraries(test_user 
     ${CMAKE_THREAD_LIBS_INIT}# 链接线程库  
@@ -61,6 +67,10 @@ target_link_libraries(test_http_request
     ${CMAKE_THREAD_LIBS_INIT}
 )
 
+target_link_libraries(test_http_response
+    ${CMAKE_THREAD_LIBS_INIT}
+)
+
 # 设置测试可执行文件的输出目录
 set_target_properties(test_user PROPERTIES
     RUNTIME_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/tests
@@ -83,6 +93,10 @@ set_target_properties(test_timer PROPERTIES
 )
 
 set_target_properties(test_http_request PROPERTIES
+    RUNTIME_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/tests
+)
+
+set_target_properties(test_http_response PROPERTIES
     RUNTIME_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/tests
 )
 
@@ -117,6 +131,11 @@ target_include_directories(test_http_request PRIVATE
     
 )
 
+target_include_directories(test_http_response PRIVATE
+    ${CMAKE_SOURCE_DIR}/src
+    
+)
+
 # 如果使用CTest，可以添加测试
 enable_testing()
 add_test(NAME UserTests COMMAND test_user)
@@ -125,3 +144,4 @@ add_test(NAME DatabaseManagerTests COMMAND test_database_manager)
 add_test(NAME ThreadPoolTests COMMAND test_thread_pool)
 add_test(NAME TimerTests COMMAND test_timer)
 add_test(NAME HttpRequestTests COMMAND test_http_request)
+add_test(NAME HttpResponseTests COMMAND test_http_response)
