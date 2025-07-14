@@ -1,0 +1,72 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>C++ WebSocket 聊天室</title>
+    <link rel="stylesheet" href="style.css">
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+SC:wght@400;700&display=swap" rel="stylesheet">
+    <script src="https://kit.fontawesome.com/a076d05399.js" crossorigin="anonymous"></script> </head>
+<body>
+
+    <div id="auth-modal" class="modal-overlay">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h2 id="modal-title">登录</h2>
+                <div id="auth-error" class="error-message"></div>
+            </div>
+            <form id="auth-form">
+                <div class="form-group">
+                    <label for="username">用户名</label>
+                    <input type="text" id="username" name="username" required>
+                </div>
+                <div class="form-group">
+                    <label for="password">密码</label>
+                    <input type="password" id="password" name="password" required>
+                </div>
+                <div class="form-actions">
+                    <button type="submit" id="login-btn" class="btn primary">登录</button>
+                    <button type="button" id="register-btn" class="btn secondary">注册</button>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <div id="chat-container" class="chat-container hidden">
+        <aside class="sidebar rooms-panel">
+            <header>
+                <h3>聊天室</h3>
+            </header>
+            <ul id="room-list">
+                </ul>
+        </aside>
+
+        <main class="chat-area">
+            <header class="chat-header">
+                <h2 id="current-room-name"># General</h2>
+                <span id="user-count">0 users</span>
+            </header>
+            <div id="message-list" class="message-list">
+                </div>
+            <form id="message-form" class="message-form">
+                <input type="text" id="message-input" placeholder="输入消息..." autocomplete="off" required>
+                <button type="submit" class="send-btn">
+                    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor" width="24" height="24"><path d="M2.01 21L23 12 2.01 3 2 10l15 2-15 2z"/></svg>
+                </button>
+            </form>
+        </main>
+
+        <aside class="sidebar users-panel">
+            <header>
+                <h3>在线用户</h3>
+            </header>
+            <ul id="user-list">
+                </ul>
+        </aside>
+    </div>
+
+    <script src="app.js"></script>
+</body>
+</html>
