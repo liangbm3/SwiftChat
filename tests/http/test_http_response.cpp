@@ -1,199 +1,102 @@
-#include <iostream>
-#include <cassert>
-#include <string>
-#include <vector>
-#include "../../src/http/http_response.hpp"
+#include <gtest/gtest.h>
+#include <gmock/gmock.h> // GTest的配套库，提供了更丰富的匹配器
+#include "http/http_response.hpp" // 确保路径正确
 
-class HttpResponseTest {
-public:
-    void testBasicResponse() {
-        std::cout << "Testing basic response..." << std::endl;
-        
-        http::HttpResponse response(200, "Hello World");
-        
-        assert(response.status_code == 200);
-        assert(response.body == "{\"message\":\"Hello World\"}");
-        assert(response.headers["Content-Type"] == "application/json; charset=utf-8");
-        assert(response.headers["Server"] == "SwiftChat/1.0");
-        assert(!response.headers["Date"].empty());
-        assert(response.headers["Connection"] == "close");
-        
-        std::cout << "Basic response test passed!" << std::endl;
-    }
-    
-    void testJsonResponse() {
-        std::cout << "Testing JSON response..." << std::endl;
-        
-        std::string json_body = "{\"username\":\"test\",\"status\":\"online\"}";
-        http::HttpResponse response(200, json_body);
-        
-        assert(response.status_code == 200);
-        assert(response.body == json_body);
-        assert(response.headers["Content-Type"] == "application/json; charset=utf-8");
-        
-        std::cout << "JSON response test passed!" << std::endl;
-    }
-    
-    void testArrayJsonResponse() {
-        std::cout << "Testing JSON array response..." << std::endl;
-        
-        std::string json_array = "[{\"id\":1,\"name\":\"test\"},{\"id\":2,\"name\":\"test2\"}]";
-        http::HttpResponse response(200, json_array);
-        
-        assert(response.status_code == 200);
-        assert(response.body == json_array);
-        assert(response.headers["Content-Type"] == "application/json; charset=utf-8");
-        
-        std::cout << "JSON array response test passed!" << std::endl;
-    }
-    
-    void testEmptyResponse() {
-        std::cout << "Testing empty response..." << std::endl;
-        
-        http::HttpResponse response(204, "");
-        
-        assert(response.status_code == 204);
-        assert(response.body.empty());
-        assert(response.headers["Content-Type"] == "text/plain");
-        
-        std::cout << "Empty response test passed!" << std::endl;
-    }
-    
-    void testSpecialCharacters() {
-        std::cout << "Testing special characters..." << std::endl;
-        
-        std::string message_with_quotes = "He said \"Hello\" and she replied.";
-        http::HttpResponse response(200, message_with_quotes);
-        
-        assert(response.status_code == 200);
-        // 检查特殊字符是否被正确转义
-        assert(response.body.find("\\\"") != std::string::npos);
-        assert(response.headers["Content-Type"] == "application/json; charset=utf-8");
-        
-        std::cout << "Special characters test passed!" << std::endl;
-    }
-    
-    void testNewlineAndControlCharacters() {
-        std::cout << "Testing newline and control characters..." << std::endl;
-        
-        std::string message_with_newline = "Line 1\nLine 2\tTabbed\rCarriage Return";
-        http::HttpResponse response(200, message_with_newline);
-        
-        assert(response.status_code == 200);
-        // 检查换行符、制表符等是否被正确转义
-        assert(response.body.find("\\n") != std::string::npos);
-        assert(response.body.find("\\t") != std::string::npos);
-        assert(response.body.find("\\r") != std::string::npos);
-        
-        std::cout << "Newline and control characters test passed!" << std::endl;
-    }
-    
-    void testToString() {
-        std::cout << "Testing toString method..." << std::endl;
-        
-        http::HttpResponse response(404, "Not Found");
-        std::string response_string = response.toString();
-        
-        // 检查响应字符串格式
-        assert(response_string.find("HTTP/1.1 404 Not Found") != std::string::npos);
-        assert(response_string.find("Content-Length:") != std::string::npos);
-        assert(response_string.find("Content-Type: application/json; charset=utf-8") != std::string::npos);
-        assert(response_string.find("Server: SwiftChat/1.0") != std::string::npos);
-        assert(response_string.find("\r\n\r\n") != std::string::npos); // 头部和体之间的空行
-        
-        std::cout << "toString test passed!" << std::endl;
-    }
-    
-    void testStatusCodes() {
-        std::cout << "Testing various status codes..." << std::endl;
-        
-        struct TestCase {
-            int code;
-            std::string expected_text;
-        };
-        
-        std::vector<TestCase> test_cases = {
-            {200, "OK"},
-            {201, "Created"},
-            {302, "Found"},
-            {400, "Bad Request"},
-            {401, "Unauthorized"},
-            {403, "Forbidden"},
-            {404, "Not Found"},
-            {409, "Conflict"},
-            {500, "Internal Server Error"},
-            {999, "Unknown"}
-        };
-        
-        for (const auto& test_case : test_cases) {
-            http::HttpResponse response(test_case.code, "test");
-            std::string response_string = response.toString();
-            
-            std::string expected_status_line = "HTTP/1.1 " + std::to_string(test_case.code) + " " + test_case.expected_text;
-            assert(response_string.find(expected_status_line) != std::string::npos);
-        }
-        
-        std::cout << "Status codes test passed!" << std::endl;
-    }
-    
-    void testContentLength() {
-        std::cout << "Testing content length calculation..." << std::endl;
-        
-        http::HttpResponse response(200, "Test message");
-        std::string response_string = response.toString();
-        
-        // 计算实际body长度
-        size_t expected_length = response.body.length();
-        std::string expected_content_length = "Content-Length: " + std::to_string(expected_length);
-        
-        assert(response_string.find(expected_content_length) != std::string::npos);
-        
-        std::cout << "Content length test passed!" << std::endl;
-    }
-    
-    void testCustomHeaders() {
-        std::cout << "Testing custom headers..." << std::endl;
-        
-        http::HttpResponse response(200, "Custom response");
-        response.headers["X-Custom-Header"] = "custom-value";
-        response.headers["Cache-Control"] = "no-cache";
-        
-        std::string response_string = response.toString();
-        
-        assert(response_string.find("X-Custom-Header: custom-value") != std::string::npos);
-        assert(response_string.find("Cache-Control: no-cache") != std::string::npos);
-        
-        std::cout << "Custom headers test passed!" << std::endl;
-    }
-    
-    void runAllTests() {
-        try {
-            testBasicResponse();
-            testJsonResponse();
-            testArrayJsonResponse();
-            testEmptyResponse();
-            testSpecialCharacters();
-            testNewlineAndControlCharacters();
-            testToString();
-            testStatusCodes();
-            testContentLength();
-            testCustomHeaders();
-            
-            std::cout << "\n✅ All HttpResponse tests passed!" << std::endl;
-        } catch (const std::exception& e) {
-            std::cerr << "❌ Test failed with exception: " << e.what() << std::endl;
-            throw;
-        }
-    }
-};
+using namespace testing;
 
-int main() {
-    try {
-        HttpResponseTest test;
-        test.runAllTests();
-        return 0;
-    } catch (const std::exception& e) {
-        std::cerr << "Test suite failed: " << e.what() << std::endl;
-        return 1;
-    }
+TEST(HttpResponseTest, DefaultConstructorIs200OK) {
+    http::HttpResponse resp;
+    const auto resp_str = resp.toString();
+
+    EXPECT_THAT(resp_str, StartsWith("HTTP/1.1 200 OK\r\n"));
+    EXPECT_THAT(resp_str, HasSubstr("Content-Length: 0\r\n"));
+    EXPECT_THAT(resp_str, EndsWith("\r\n\r\n"));
+}
+
+TEST(HttpResponseTest, StaticFactoryForNotFound) {
+    // 测试静态工厂方法是否正确设置状态码和默认的JSON body
+    auto resp = http::HttpResponse::NotFound("Resource not available");
+    const auto resp_str = resp.toString();
+
+    const std::string expected_body = "{\"error\":\"Resource not available\"}";
+
+    EXPECT_THAT(resp_str, StartsWith("HTTP/1.1 404 Not Found\r\n"));
+    EXPECT_THAT(resp_str, HasSubstr("Content-Type: application/json; charset=utf-8\r\n"));
+    EXPECT_THAT(resp_str, HasSubstr("Content-Length: " + std::to_string(expected_body.length()) + "\r\n"));
+    EXPECT_THAT(resp_str, EndsWith("\r\n\r\n" + expected_body));
+}
+
+TEST(HttpResponseTest, FluentInterfaceChaining) {
+    http::HttpResponse resp;
+
+    // 使用链式调用来构建响应
+    resp.withStatus(418) // I'm a teapot
+        .withHeader("X-Custom-Header", "Hello C++")
+        .withBody("I'm a teapot", "text/plain");
+
+    const auto resp_str = resp.toString();
+
+    EXPECT_THAT(resp_str, StartsWith("HTTP/1.1 418 Unknown\r\n"));
+    EXPECT_THAT(resp_str, HasSubstr("X-Custom-Header: Hello C++\r\n"));
+    EXPECT_THAT(resp_str, HasSubstr("Content-Type: text/plain\r\n"));
+    EXPECT_THAT(resp_str, HasSubstr("Content-Length: 13\r\n")); // "I'm a teapot" 的长度
+    EXPECT_THAT(resp_str, EndsWith("\r\n\r\nI'm a teapot"));
+}
+
+TEST(HttpResponseTest, WithJsonBody) {
+    nlohmann::json json_payload = {
+        {"status", "success"},
+        {"data", {1, "two", 3.0}}
+    };
+
+    // 使用 withJsonBody 设置响应体
+    auto resp = http::HttpResponse::Ok().withJsonBody(json_payload);
+    const auto resp_str = resp.toString();
+    
+    // nlohmann::json::dump() 会生成无空格的字符串
+    const std::string expected_body = json_payload.dump();
+
+    EXPECT_THAT(resp_str, StartsWith("HTTP/1.1 200 OK\r\n"));
+    EXPECT_THAT(resp_str, HasSubstr("Content-Type: application/json; charset=utf-8\r\n"));
+    EXPECT_THAT(resp_str, HasSubstr("Content-Length: " + std::to_string(expected_body.length()) + "\r\n"));
+    EXPECT_THAT(resp_str, EndsWith("\r\n\r\n" + expected_body));
+}
+
+TEST(HttpResponseTest, HeaderOverwriting) {
+    // 验证后设置的 header 会覆盖之前的同名 header
+    auto resp = http::HttpResponse::Ok()
+                  .withHeader("Cache-Control", "no-cache")
+                  .withHeader("cache-control", "max-age=3600"); // key 是大小写不敏感的，但这里是标准 map，所以会区分
+
+    const auto resp_str = resp.toString();
+
+    // 注意：std::unordered_map 是大小写敏感的，所以这里会存在两个header
+    // 如果您希望 header 的 key 也不敏感，需要像 HttpRequest 那样使用自定义比较器
+    // 这里我们测试当前实现的行为
+    EXPECT_THAT(resp_str, HasSubstr("Cache-Control: no-cache\r\n"));
+    EXPECT_THAT(resp_str, HasSubstr("cache-control: max-age=3600\r\n"));
+
+    // 如果我们用完全相同的 key, 则会覆盖
+    auto resp2 = http::HttpResponse::Ok()
+                   .withHeader("Cache-Control", "no-cache")
+                   .withHeader("Cache-Control", "max-age=3600"); 
+
+    const auto resp_str2 = resp2.toString();
+    EXPECT_THAT(resp_str2, Not(HasSubstr("Cache-Control: no-cache\r\n")));
+    EXPECT_THAT(resp_str2, HasSubstr("Cache-Control: max-age=3600\r\n"));
+}
+
+TEST(HttpResponseTest, CorrectContentLength) {
+    // 1. 对于没有body的响应
+    auto resp_no_body = http::HttpResponse::NoContent(); // 假设我们添加一个204工厂
+    // 或者用现有的
+    // auto resp_no_body = http::HttpResponse::Ok("").withStatus(204);
+    // 实际上204响应不应该有body，我们这里测试一个body为空字符串的情况
+    auto resp_empty_body = http::HttpResponse::Ok("");
+    EXPECT_THAT(resp_empty_body.toString(), HasSubstr("Content-Length: 0\r\n"));
+
+    // 2. 对于有body的响应
+    std::string body = "Hello, World!";
+    auto resp_with_body = http::HttpResponse::Ok(body);
+    EXPECT_THAT(resp_with_body.toString(), HasSubstr("Content-Length: " + std::to_string(body.length()) + "\r\n"));
 }
