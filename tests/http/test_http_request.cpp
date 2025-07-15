@@ -1,196 +1,125 @@
-#include <iostream>
-#include <cassert>
-#include <string>
-#include "../../src/http/http_request.hpp"
+#include <gtest/gtest.h>
+#include "http/http_request.hpp" // 确保路径正确
 
-class HttpRequestTest {
-public:
-    void testBasicGetRequest() {
-        std::cout << "Testing basic GET request..." << std::endl;
-        
-        std::string raw_request = 
-            "GET /index.html HTTP/1.1\r\n"
-            "Host: example.com\r\n"
-            "User-Agent: TestClient/1.0\r\n"
-            "\r\n";
-        
-        auto request = http::HttpRequest::parse(raw_request);
-        
-        assert(request.method == "GET");
-        assert(request.path == "/index.html");
-        assert(request.version == "HTTP/1.1");
-        assert(request.headers["Host"] == "example.com");
-        assert(request.headers["User-Agent"] == "TestClient/1.0");
-        assert(request.body.empty());
-        
-        std::cout << "Basic GET request test passed!" << std::endl;
-    }
-    
-    void testGetWithQueryParams() {
-        std::cout << "Testing GET request with query parameters..." << std::endl;
-        
-        std::string raw_request = 
-            "GET /search?q=hello+world&page=1&limit=10 HTTP/1.1\r\n"
-            "Host: example.com\r\n"
-            "\r\n";
-        
-        auto request = http::HttpRequest::parse(raw_request);
-        
-        assert(request.method == "GET");
-        assert(request.path == "/search");
-        assert(request.query_params["q"] == "hello world");
-        assert(request.query_params["page"] == "1");
-        assert(request.query_params["limit"] == "10");
-        
-        std::cout << "GET with query parameters test passed!" << std::endl;
-    }
-    
-    void testPostWithBody() {
-        std::cout << "Testing POST request with body..." << std::endl;
-        
-        std::string body_content = "{\"username\":\"test\",\"password\":\"123456\"}";
-        std::string raw_request = 
-            "POST /api/login HTTP/1.1\r\n"
-            "Host: example.com\r\n"
-            "Content-Type: application/json\r\n"
-            "Content-Length: " + std::to_string(body_content.length()) + "\r\n"
-            "\r\n" +
-            body_content;
-        
-        auto request = http::HttpRequest::parse(raw_request);
-        
-        assert(request.method == "POST");
-        assert(request.path == "/api/login");
-        assert(request.headers["Host"] == "example.com");
-        assert(request.headers["Content-Type"] == "application/json");
-        assert(request.headers["Content-Length"] == std::to_string(body_content.length()));
-        assert(request.body == body_content);
-        
-        std::cout << "POST with body test passed!" << std::endl;
-    }
-    
-    void testUrlEncoding() {
-        std::cout << "Testing URL encoding/decoding..." << std::endl;
-        
-        std::string raw_request = 
-            "GET /search?q=hello%20world%21&special=%2B%26%3D HTTP/1.1\r\n"
-            "Host: example.com\r\n"
-            "\r\n";
-        
-        auto request = http::HttpRequest::parse(raw_request);
-        
-        assert(request.method == "GET");
-        assert(request.path == "/search");
-        assert(request.query_params["q"] == "hello world!");
-        assert(request.query_params["special"] == "+&=");
-        
-        std::cout << "URL encoding test passed!" << std::endl;
-    }
-    
-    void testEmptyBody() {
-        std::cout << "Testing request with zero content length..." << std::endl;
-        
-        std::string raw_request = 
-            "POST /api/ping HTTP/1.1\r\n"
-            "Host: example.com\r\n"
-            "Content-Length: 0\r\n"
-            "\r\n";
-        
-        auto request = http::HttpRequest::parse(raw_request);
-        
-        assert(request.method == "POST");
-        assert(request.path == "/api/ping");
-        assert(request.headers["Content-Length"] == "0");
-        assert(request.body.empty());
-        
-        std::cout << "Empty body test passed!" << std::endl;
-    }
-    
-    void testHeadersWithSpaces() {
-        std::cout << "Testing headers with various spacing..." << std::endl;
-        
-        std::string raw_request = 
-            "GET / HTTP/1.1\r\n"
-            "Host: example.com\r\n"
-            "Authorization: Bearer token123\r\n"
-            "X-Custom-Header:    value with spaces   \r\n"
-            "\r\n";
-        
-        auto request = http::HttpRequest::parse(raw_request);
-        
-        assert(request.headers["Host"] == "example.com");
-        assert(request.headers["Authorization"] == "Bearer token123");
-        assert(request.headers["X-Custom-Header"] == "value with spaces   ");
-        
-        std::cout << "Headers with spaces test passed!" << std::endl;
-    }
-    
-    void testMalformedRequests() {
-        std::cout << "Testing malformed requests..." << std::endl;
-        
-        // Test empty request
-        auto empty_request = http::HttpRequest::parse("");
-        assert(empty_request.method.empty());
-        
-        // Test invalid Content-Length
-        std::string invalid_content_length = 
-            "POST /api/test HTTP/1.1\r\n"
-            "Content-Length: invalid\r\n"
-            "\r\n"
-            "some body";
-        
-        auto request_invalid_length = http::HttpRequest::parse(invalid_content_length);
-        assert(request_invalid_length.method == "POST");
-        assert(request_invalid_length.body.empty()); // Should not read body with invalid length
-        
-        std::cout << "Malformed requests test passed!" << std::endl;
-    }
-    
-    void testMultilineBody() {
-        std::cout << "Testing multiline body..." << std::endl;
-        
-        std::string body_content = "line1\nline2\r\nline3";
-        std::string raw_request = 
-            "POST /api/data HTTP/1.1\r\n"
-            "Content-Length: " + std::to_string(body_content.length()) + "\r\n"
-            "\r\n" +
-            body_content;
-        
-        auto request = http::HttpRequest::parse(raw_request);
-        
-        assert(request.method == "POST");
-        assert(request.path == "/api/data");
-        assert(request.body == body_content);
-        
-        std::cout << "Multiline body test passed!" << std::endl;
-    }
-    
-    void runAllTests() {
-        try {
-            testBasicGetRequest();
-            testGetWithQueryParams();
-            testPostWithBody();
-            testUrlEncoding();
-            testEmptyBody();
-            testHeadersWithSpaces();
-            testMalformedRequests();
-            testMultilineBody();
-            
-            std::cout << "\n✅ All HttpRequest tests passed!" << std::endl;
-        } catch (const std::exception& e) {
-            std::cerr << "❌ Test failed with exception: " << e.what() << std::endl;
-            throw;
-        }
-    }
-};
+TEST(HttpRequestTest, ParseBasicGetRequest) {
+    const std::string raw_request = 
+        "GET /index.html HTTP/1.1\r\n"
+        "Host: www.example.com\r\n"
+        "\r\n";
 
-int main() {
-    try {
-        HttpRequestTest test;
-        test.runAllTests();
-        return 0;
-    } catch (const std::exception& e) {
-        std::cerr << "Test suite failed: " << e.what() << std::endl;
-        return 1;
-    }
+    auto request_opt = http::HttpRequest::parse(raw_request);
+
+    ASSERT_TRUE(request_opt.has_value());
+    const auto& req = *request_opt;
+
+    EXPECT_EQ(req.getMethod(), "GET");
+    EXPECT_EQ(req.getPath(), "/index.html");
+    EXPECT_EQ(req.getVersion(), "HTTP/1.1");
+    EXPECT_TRUE(req.getBody().empty());
+    EXPECT_TRUE(req.hasHeader("Host"));
+    EXPECT_EQ(req.getHeaderValue("Host").value(), "www.example.com");
+}
+
+TEST(HttpRequestTest, ParseRequestWithHeaders) {
+    const std::string raw_request = 
+        "GET /api/users HTTP/1.1\r\n"
+        "Host: api.example.com\r\n"
+        "User-Agent: MyTestClient/1.0\r\n"
+        "accept: application/json\r\n" // 小写 accept
+        "\r\n";
+    
+    auto request_opt = http::HttpRequest::parse(raw_request);
+
+    ASSERT_TRUE(request_opt.has_value());
+    const auto& req = *request_opt;
+
+    // 测试大小写不敏感
+    EXPECT_TRUE(req.hasHeader("Host"));
+    EXPECT_TRUE(req.hasHeader("host"));
+    EXPECT_TRUE(req.hasHeader("HOST"));
+    
+    EXPECT_EQ(req.getHeaderValue("user-agent").value(), "MyTestClient/1.0");
+    EXPECT_EQ(req.getHeaderValue("Accept").value(), "application/json"); // 用大写 Accept 查询
+    EXPECT_FALSE(req.hasHeader("Connection"));
+}
+
+TEST(HttpRequestTest, ParseRequestWithQueryParams) {
+    const std::string raw_request = 
+        "GET /search?q=c%2B%2B%20projects&page=2 HTTP/1.1\r\n"
+        "Host: www.google.com\r\n"
+        "\r\n";
+
+    auto request_opt = http::HttpRequest::parse(raw_request);
+    
+    ASSERT_TRUE(request_opt.has_value());
+    const auto& req = *request_opt;
+
+    EXPECT_EQ(req.getPath(), "/search"); // 路径应被正确分离
+    EXPECT_TRUE(req.hasQueryParam("q"));
+    EXPECT_TRUE(req.hasQueryParam("page"));
+    EXPECT_FALSE(req.hasQueryParam("limit"));
+
+    EXPECT_EQ(req.getQueryParam("q").value(), "c++ projects"); // 验证URL解码
+    EXPECT_EQ(req.getQueryParam("page").value(), "2");
+}
+
+TEST(HttpRequestTest, ParseRequestWithCookies) {
+    const std::string raw_request = 
+        "GET /profile HTTP/1.1\r\n"
+        "Host: my.site.com\r\n"
+        "Cookie: session_id=abc123xyz; theme=dark; tracking=false\r\n"
+        "\r\n";
+
+    auto request_opt = http::HttpRequest::parse(raw_request);
+    
+    ASSERT_TRUE(request_opt.has_value());
+    const auto& req = *request_opt;
+
+    EXPECT_TRUE(req.hasCookie("session_id"));
+    EXPECT_TRUE(req.hasCookie("theme"));
+    EXPECT_TRUE(req.hasCookie("tracking"));
+
+    EXPECT_EQ(req.getCookieValue("session_id").value(), "abc123xyz");
+    EXPECT_EQ(req.getCookieValue("theme").value(), "dark");
+    EXPECT_FALSE(req.hasCookie("lang"));
+}
+
+TEST(HttpRequestTest, ParsePostRequestWithBody) {
+    const std::string body = "{\"username\":\"test\",\"password\":\"12345\"}";
+    const std::string raw_request = 
+        "POST /login HTTP/1.1\r\n"
+        "Host: auth.example.com\r\n"
+        "Content-Type: application/json\r\n"
+        "Content-Length: " + std::to_string(body.length()) + "\r\n"
+        "\r\n" +
+        body;
+
+    auto request_opt = http::HttpRequest::parse(raw_request);
+
+    ASSERT_TRUE(request_opt.has_value());
+    const auto& req = *request_opt;
+
+    EXPECT_EQ(req.getMethod(), "POST");
+    EXPECT_EQ(req.getPath(), "/login");
+    ASSERT_TRUE(req.hasHeader("Content-Length"));
+    EXPECT_EQ(std::stoul(req.getHeaderValue("Content-Length").value().data()), body.length());
+    EXPECT_EQ(req.getBody(), body);
+}
+
+TEST(HttpRequestTest, HandleMalformedRequests) {
+    // 1. 空请求
+    EXPECT_FALSE(http::HttpRequest::parse("").has_value());
+
+    // 2. 请求行不完整
+    EXPECT_FALSE(http::HttpRequest::parse("GET / HTTP/1.1").has_value()); // 缺少结尾的\r\n
+    EXPECT_FALSE(http::HttpRequest::parse("GET / \r\n\r\n").has_value()); // 缺少版本
+
+    // 3. Content-Length 值无效
+    const std::string invalid_cl_request = 
+        "POST /data HTTP/1.1\r\n"
+        "Host: local\r\n"
+        "Content-Length: not-a-number\r\n"
+        "\r\n"
+        "some data";
+    EXPECT_FALSE(http::HttpRequest::parse(invalid_cl_request).has_value());
 }
