@@ -30,14 +30,14 @@ namespace http
             close(server_fd_);
     }
 
-    void HttpServer::addHandler(const std::string &path, const std::string &method, RequestHandler handler)
+    void HttpServer::addHandler(const Route &route)
     {
-        handlers_[path][method] = std::move(handler);
+        routes_.push_back(route);
     }
 
-    void HttpServer::addMiddleware(Middleware middleware)
+    void HttpServer::setMiddleware(Middleware middleware)
     {
-        middleware_chain_.push_back(std::move(middleware));
+        this->middleware_ = std::move(middleware);
     }
 
     void HttpServer::setStaticDirectory(const std::string &dir)
@@ -111,41 +111,33 @@ namespace http
     // [新增] 路由与中间件处理
     HttpResponse HttpServer::routeRequest(const HttpRequest &request)
     {
-        // 最终要执行的核心业务逻辑（API路由或静态文件服务）
-        RequestHandler final_handler = [this](const HttpRequest &req) -> HttpResponse
+        //遍历注册的所有路由
+        for(const auto& route : routes_)
         {
-            auto path_it = handlers_.find(req.getPath());
-            if (path_it != handlers_.end())
+            // 检查请求方法和路径是否匹配
+            if (route.method == request.getMethod() && route.path == request.getPath())
             {
-                auto method_it = path_it->second.find(req.getMethod());
-                if (method_it != path_it->second.end())
+                // 检查这个路由是否需要验证
+                if (route.use_auth_middleware && middleware_)
                 {
-                    return method_it->second(req); // 找到API处理器
+                    // 使用中间件处理请求
+                    return middleware_(request, route.handler);
                 }
-                return HttpResponse::BadRequest("Method Not Allowed");
+                else
+                {
+                    // 直接调用处理函数
+                    return route.handler(request);
+                }
             }
-
-            // 检查是否为静态文件请求
-            if (req.getMethod() == "GET")
-            {
-                return serveStaticFile(req.getPath());
-            }
-
-            return HttpResponse::NotFound("Endpoint not found");
-        };
-
-        // 将中间件从后往前串联成一个调用链
-        auto chain = final_handler;
-        for (auto it = middleware_chain_.rbegin(); it != middleware_chain_.rend(); ++it)
-        {
-            chain = [=](const HttpRequest &req)
-            {
-                return (*it)(req, chain);
-            };
         }
-
-        // 从调用链的顶端开始执行
-        return chain(request);
+        //如果没有API路由匹配，尝试作为静态文件请求处理
+        if(request.getMethod() == "GET"&&!static_dir_.empty())
+        {
+            return serveStaticFile(request.getPath());
+        }
+        
+        // 如果没有匹配的路由和静态文件，返回404
+        return HttpResponse::NotFound("Endpoint not found");
     }
 
     // [优化] 返回HttpResponse对象，而不是修改引用

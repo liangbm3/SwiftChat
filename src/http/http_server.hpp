@@ -20,14 +20,21 @@ namespace http
         // 它接收一个请求和一个“下一个”处理函数，并返回一个响应
         using Middleware = std::function<HttpResponse(const HttpRequest &, const RequestHandler &)>;
 
+        struct Route
+        {
+            std::string path; // 路由路径
+            std::string method; // HTTP方法，如 GET、POST 等
+            RequestHandler handler; // 处理函数
+            bool use_auth_middleware; // 是否使用认证中间件
+        };
         explicit HttpServer(int port, size_t thread_count = std::thread::hardware_concurrency());
         ~HttpServer();
 
-        // 注册API路由处理函数
-        void addHandler(const std::string &path, const std::string &method, RequestHandler handler);
+        // 注册API路由处理函数，接收一个路由函数
+        void addHandler(const Route &route);
 
         // 注册中间件
-        void addMiddleware(Middleware middleware);
+        void setMiddleware(Middleware middleware);
 
         // 设置静态文件目录
         void setStaticDirectory(const std::string &dir);
@@ -46,10 +53,10 @@ namespace http
         utils::ThreadPool thread_pool_;
         std::string static_dir_;
 
-        // 路由表：Path -> (Method -> Handler)
-        std::unordered_map<std::string, std::unordered_map<std::string, RequestHandler>> handlers_;
-        // 中间件链
-        std::vector<Middleware> middleware_chain_;
+        // 路由表：
+        std::vector<Route> routes_;
+        // 中间件
+        Middleware middleware_;
 
         // MIME类型映射表，设为静态常量以提高效率
         static const std::unordered_map<std::string, std::string> MIME_TYPES;
