@@ -1,270 +1,177 @@
-#include <iostream>
-#include <cassert>
-#include <chrono>
-#include <filesystem>
-#include <thread>
-#include "../../src/db/database_manager.hpp"
-#include "../../src/utils/logger.hpp"
+#include <gtest/gtest.h>
+#include <memory>
+#include <string>
+#include <vector>
+#include <optional>
+#include <cstdio>
+#include "../../src/db/database_manager.hpp" // 请确保路径正确
 
-namespace fs = std::filesystem;
-
-class DatabaseManagerTest {
-private:
-    std::string test_db_path;
-    std::unique_ptr<DatabaseManager> db_manager;
-
-public:
-    DatabaseManagerTest() : test_db_path("test_chat.db") {}
-
-    ~DatabaseManagerTest() {
-        cleanup();
+// 测试固件 (无需修改)
+class DatabaseManagerTest : public ::testing::Test {
+protected:
+    void SetUp() override {
+        test_db_path_ = "test_db_final_" + std::to_string(rand()) + ".sqlite";
+        db_manager_ = std::make_unique<DatabaseManager>(test_db_path_);
+        ASSERT_TRUE(db_manager_->isConnected()) << "数据库连接创建失败";
     }
 
-    void setup() {
-        // 清理之前的测试数据库
-        cleanup();
-        
-        // 创建新的数据库管理器实例
-        db_manager = std::make_unique<DatabaseManager>(test_db_path);
+    void TearDown() override {
+        db_manager_.reset();
+        std::remove(test_db_path_.c_str());
     }
 
-    void cleanup() {
-        db_manager.reset();
-        if (fs::exists(test_db_path)) {
-            fs::remove(test_db_path);
-        }
-    }
-
-    void testUserOperations() {
-        std::cout << "Testing user operations..." << std::endl;
-
-        // 测试创建用户
-        assert(db_manager->createUser("testuser1", "hashed_password1"));
-        assert(db_manager->createUser("testuser2", "hashed_password2"));
-        
-        // 测试用户是否存在
-        assert(db_manager->userExists("testuser1"));
-        assert(db_manager->userExists("testuser2"));
-        assert(!db_manager->userExists("nonexistent"));
-
-        // 测试验证用户
-        assert(db_manager->validateUser("testuser1", "hashed_password1"));
-        assert(db_manager->validateUser("testuser2", "hashed_password2"));
-        assert(!db_manager->validateUser("testuser1", "wrong_password"));
-        assert(!db_manager->validateUser("nonexistent", "any_password"));
-
-        // 测试设置用户在线状态
-        assert(db_manager->setUserOnlineStatus("testuser1", true));
-        assert(db_manager->setUserOnlineStatus("testuser2", false));
-
-        // 测试更新用户最后活跃时间
-        assert(db_manager->updateUserLastActiveTime("testuser1"));
-
-        // 测试获取所有用户
-        auto users = db_manager->getAllUsers();
-        assert(users.size() == 2);
-        
-        bool found_user1 = false, found_user2 = false;
-        for (const auto& user : users) {
-            if (user.username == "testuser1") {
-                found_user1 = true;
-                assert(user.password == "hashed_password1");
-                assert(user.is_online == true);
-            } else if (user.username == "testuser2") {
-                found_user2 = true;
-                assert(user.password == "hashed_password2");
-                assert(user.is_online == false);
-            }
-        }
-        assert(found_user1 && found_user2);
-
-        std::cout << "User operations tests passed!" << std::endl;
-    }
-
-    void testRoomOperations() {
-        std::cout << "Testing room operations..." << std::endl;
-
-        // 先创建用户（房间需要创建者）
-        assert(db_manager->createUser("creator", "password"));
-
-        // 测试创建房间
-        assert(db_manager->createRoom("room1", "creator"));
-        assert(db_manager->createRoom("room2", "creator"));
-
-        // 测试获取房间列表
-        auto rooms = db_manager->getRooms();
-        assert(rooms.size() == 2);
-        assert(std::find(rooms.begin(), rooms.end(), "room1") != rooms.end());
-        assert(std::find(rooms.begin(), rooms.end(), "room2") != rooms.end());
-
-        // 测试删除房间
-        assert(db_manager->deleteRoom("room2"));
-        rooms = db_manager->getRooms();
-        assert(rooms.size() == 1);
-        assert(std::find(rooms.begin(), rooms.end(), "room1") != rooms.end());
-        assert(std::find(rooms.begin(), rooms.end(), "room2") == rooms.end());
-
-        std::cout << "Room operations tests passed!" << std::endl;
-    }
-
-    void testRoomMemberOperations() {
-        std::cout << "Testing room member operations..." << std::endl;
-
-        // 准备测试数据
-        assert(db_manager->createUser("member1", "password1"));
-        assert(db_manager->createUser("member2", "password2"));
-        assert(db_manager->createRoom("testroom", "member1"));
-
-        // 测试添加房间成员
-        assert(db_manager->addRoomMember("testroom", "member1"));
-        assert(db_manager->addRoomMember("testroom", "member2"));
-
-        // 测试重复添加同一成员（应该成功，不报错）
-        assert(db_manager->addRoomMember("testroom", "member1"));
-
-        // 测试获取房间成员
-        auto members = db_manager->getRoomMembers("testroom");
-        assert(members.size() == 2);
-        assert(std::find(members.begin(), members.end(), "member1") != members.end());
-        assert(std::find(members.begin(), members.end(), "member2") != members.end());
-
-        // 测试移除房间成员
-        assert(db_manager->removeRoomMember("testroom", "member2"));
-        members = db_manager->getRoomMembers("testroom");
-        assert(members.size() == 1);
-        assert(std::find(members.begin(), members.end(), "member1") != members.end());
-        assert(std::find(members.begin(), members.end(), "member2") == members.end());
-
-        std::cout << "Room member operations tests passed!" << std::endl;
-    }
-
-    void testMessageOperations() {
-        std::cout << "Testing message operations..." << std::endl;
-
-        // 准备测试数据
-        assert(db_manager->createUser("sender1", "password1"));
-        assert(db_manager->createUser("sender2", "password2"));
-        assert(db_manager->createRoom("msgroom", "sender1"));
-
-        // 获取当前时间戳
-        auto now = std::chrono::system_clock::now();
-        auto timestamp1 = now.time_since_epoch().count();
-        
-        // 等待一小段时间确保时间戳不同
-        std::this_thread::sleep_for(std::chrono::milliseconds(10));
-        auto timestamp2 = std::chrono::system_clock::now().time_since_epoch().count();
-
-        // 测试保存消息
-        assert(db_manager->saveMessage("msgroom", "sender1", "Hello, world!", timestamp1));
-        assert(db_manager->saveMessage("msgroom", "sender2", "How are you?", timestamp2));
-
-        // 测试获取所有消息
-        auto messages = db_manager->getMessages("msgroom", 0);
-        assert(messages.size() == 2);
-
-        // 验证消息内容和顺序（按时间戳升序）
-        assert(messages[0]["username"] == "sender1");
-        assert(messages[0]["content"] == "Hello, world!");
-        assert(messages[0]["timestamp"] == timestamp1);
-
-        assert(messages[1]["username"] == "sender2");
-        assert(messages[1]["content"] == "How are you?");
-        assert(messages[1]["timestamp"] == timestamp2);
-
-        // 测试使用 since 参数获取消息
-        auto recent_messages = db_manager->getMessages("msgroom", timestamp2);
-        assert(recent_messages.size() == 1);
-        assert(recent_messages[0]["username"] == "sender2");
-
-        std::cout << "Message operations tests passed!" << std::endl;
-    }
-
-    void testInactiveUserUpdate() {
-        std::cout << "Testing inactive user update..." << std::endl;
-
-        // 创建测试用户并设置为在线
-        assert(db_manager->createUser("activeuser", "password"));
-        assert(db_manager->setUserOnlineStatus("activeuser", true));
-
-        // 检查用户状态
-        auto users = db_manager->getAllUsers();
-        bool found = false;
-        for (const auto& user : users) {
-            if (user.username == "activeuser") {
-                assert(user.is_online == true);
-                found = true;
-                break;
-            }
-        }
-        assert(found);
-
-        // 测试检查不活跃用户（超时时间设置得很小，用户应该被标记为离线）
-        // 注意：这里使用纳秒级超时，实际应该大于当前时间
-        int64_t timeout_ns = 1000000; // 1毫秒的纳秒数
-        assert(db_manager->checkAndUpdateInactiveUsers(timeout_ns));
-
-        // 再次检查用户状态（应该还是在线，因为刚刚更新了活跃时间）
-        users = db_manager->getAllUsers();
-        found = false;
-        for (const auto& user : users) {
-            if (user.username == "activeuser") {
-                // 由于刚刚调用了setUserOnlineStatus，时间戳应该是最新的，所以还应该在线
-                // 这个测试比较复杂，我们简化为只测试函数能正常执行
-                found = true;
-                break;
-            }
-        }
-        assert(found);
-
-        std::cout << "Inactive user update tests passed!" << std::endl;
-    }
-
-    void testErrorCases() {
-        std::cout << "Testing error cases..." << std::endl;
-
-        // 测试重复创建用户（应该失败）
-        assert(db_manager->createUser("duplicate", "password1"));
-        assert(!db_manager->createUser("duplicate", "password2"));
-
-        // 测试删除不存在的房间
-        assert(db_manager->deleteRoom("nonexistent_room"));  // SQLite DELETE 即使没有匹配行也返回成功
-
-        // 测试在不存在的房间中添加成员（会因为外键约束失败）
-        // 注意：这个测试可能因为SQLite的外键约束设置而行为不同
-        // 如果外键约束被启用，这应该失败
-
-        std::cout << "Error cases tests passed!" << std::endl;
-    }
-
-    void runAllTests() {
-        setup();
-        
-        try {
-            testUserOperations();
-            testRoomOperations();
-            testRoomMemberOperations();
-            testMessageOperations();
-            testInactiveUserUpdate();
-            testErrorCases();
-            
-            std::cout << "\n✅ All DatabaseManager tests passed!" << std::endl;
-        } catch (const std::exception& e) {
-            std::cerr << "❌ Test failed with exception: " << e.what() << std::endl;
-            cleanup();
-            throw;
-        }
-        
-        cleanup();
-    }
+    std::unique_ptr<DatabaseManager> db_manager_;
+    std::string test_db_path_;
 };
 
-int main() {
-    try {
-        DatabaseManagerTest test;
-        test.runAllTests();
-        return 0;
-    } catch (const std::exception& e) {
-        std::cerr << "Test suite failed: " << e.what() << std::endl;
-        return 1;
+// --- 用户管理测试 ---
+
+TEST_F(DatabaseManagerTest, UserLifecycle) {
+    // 1. 创建用户
+    ASSERT_TRUE(db_manager_->createUser("alice", "pass123"));
+
+    // 2. 通过用户名获取用户实体以得到ID
+    auto alice_opt = db_manager_->getUserByUsername("alice");
+    ASSERT_TRUE(alice_opt.has_value());
+    User alice = *alice_opt;
+
+    // 3. 使用ID验证用户是否存在
+    ASSERT_TRUE(db_manager_->userExists(alice.getId()));
+    ASSERT_FALSE(db_manager_->userExists("non-existent-id"));
+
+    // 4. 通过ID获取用户进行验证
+    auto alice_by_id_opt = db_manager_->getUserById(alice.getId());
+    ASSERT_TRUE(alice_by_id_opt.has_value());
+    ASSERT_EQ(alice_by_id_opt->getUsername(), "alice");
+}
+
+TEST_F(DatabaseManagerTest, UserAuthenticationAndStatus) {
+    ASSERT_TRUE(db_manager_->createUser("bob", "securepass"));
+    auto bob_opt = db_manager_->getUserByUsername("bob");
+    ASSERT_TRUE(bob_opt.has_value());
+    std::string bob_id = bob_opt->getId();
+
+    // 1. 验证用户凭据
+    ASSERT_TRUE(db_manager_->validateUser("bob", "securepass"));
+    ASSERT_FALSE(db_manager_->validateUser("bob", "wrongpass"));
+
+    // 2. 更新并验证在线状态
+    ASSERT_TRUE(db_manager_->setUserOnlineStatus(bob_id, true));
+    bob_opt = db_manager_->getUserById(bob_id);
+    ASSERT_TRUE(bob_opt->isOnline());
+
+    ASSERT_TRUE(db_manager_->setUserOnlineStatus(bob_id, false));
+    bob_opt = db_manager_->getUserById(bob_id);
+    ASSERT_FALSE(bob_opt->isOnline());
+}
+
+
+// --- 房间与成员管理测试 ---
+
+TEST_F(DatabaseManagerTest, RoomAndMemberLifecycle) {
+    // 1. 准备用户并获取ID
+    db_manager_->createUser("owner", "pass_owner");
+    db_manager_->createUser("member1", "pass_member");
+    auto owner = *db_manager_->getUserByUsername("owner");
+    auto member1 = *db_manager_->getUserByUsername("member1");
+
+    // 2. 创建房间，直接获取返回的房间信息和ID
+    auto room_opt = db_manager_->createRoom("Tech Talk", owner.getId());
+    ASSERT_TRUE(room_opt.has_value());
+    std::string room_id = room_opt->at("id").get<std::string>();
+    
+    // 3. 使用ID验证房间是否存在
+    ASSERT_TRUE(db_manager_->roomExists(room_id));
+    ASSERT_FALSE(db_manager_->roomExists("non-existent-room-id"));
+
+    // 4. 验证创建者
+    ASSERT_TRUE(db_manager_->isRoomCreator(room_id, owner.getId()));
+    ASSERT_FALSE(db_manager_->isRoomCreator(room_id, member1.getId()));
+
+    // 5. 添加成员
+    ASSERT_TRUE(db_manager_->addRoomMember(room_id, owner.getId()));
+    ASSERT_TRUE(db_manager_->addRoomMember(room_id, member1.getId()));
+
+    // 6. 验证成员列表
+    auto members = db_manager_->getRoomMembers(room_id);
+    ASSERT_EQ(members.size(), 2);
+    bool owner_found = false, member1_found = false;
+    for (const auto& member : members) {
+        if (member.at("id").get<std::string>() == owner.getId()) owner_found = true;
+        if (member.at("id").get<std::string>() == member1.getId()) member1_found = true;
     }
+    ASSERT_TRUE(owner_found && member1_found);
+
+    // 7. 移除成员
+    ASSERT_TRUE(db_manager_->removeRoomMember(room_id, member1.getId()));
+    members = db_manager_->getRoomMembers(room_id);
+    ASSERT_EQ(members.size(), 1);
+    ASSERT_EQ(members[0].at("id").get<std::string>(), owner.getId());
+
+    // 8. 删除房间
+    ASSERT_TRUE(db_manager_->deleteRoom(room_id));
+    ASSERT_FALSE(db_manager_->getRoomById(room_id).has_value());
+}
+
+// --- 消息管理测试 ---
+
+TEST_F(DatabaseManagerTest, SaveAndGetMessages) {
+    // 1. 准备环境
+    auto u1 = *db_manager_->getUserByUsername( (db_manager_->createUser("u1", "p1"), "u1") );
+    auto u2 = *db_manager_->getUserByUsername( (db_manager_->createUser("u2", "p2"), "u2") );
+    auto room_opt = db_manager_->createRoom("Gossip Channel", u1.getId());
+    std::string room_id = room_opt->at("id").get<std::string>();
+    db_manager_->addRoomMember(room_id, u1.getId());
+    db_manager_->addRoomMember(room_id, u2.getId());
+
+    // 2. 发送和保存消息
+    int64_t ts1 = std::chrono::system_clock::now().time_since_epoch().count();
+    ASSERT_TRUE(db_manager_->saveMessage(room_id, u1.getId(), "Hello from u1!", ts1));
+    int64_t ts2 = ts1 + 100;
+    ASSERT_TRUE(db_manager_->saveMessage(room_id, u2.getId(), "Hello from u2!", ts2));
+
+    // 3. 获取消息并验证
+    auto messages = db_manager_->getMessages(room_id, 10); // Limit to 10
+    ASSERT_EQ(messages.size(), 2);
+
+    ASSERT_EQ(messages[0].at("sender").at("id").get<std::string>(), u1.getId());
+    ASSERT_EQ(messages[0].at("content").get<std::string>(), "Hello from u1!");
+
+    ASSERT_EQ(messages[1].at("sender").at("id").get<std::string>(), u2.getId());
+    ASSERT_EQ(messages[1].at("content").get<std::string>(), "Hello from u2!");
+}
+
+// --- 完整的端到端流程测试 ---
+
+TEST_F(DatabaseManagerTest, FullWorkflow) {
+    // 1. 创建用户
+    auto admin = *db_manager_->getUserByUsername( (db_manager_->createUser("admin", "adminpass"), "admin") );
+    auto guest = *db_manager_->getUserByUsername( (db_manager_->createUser("guest", "guestpass"), "guest") );
+
+    // 2. 创建房间
+    auto room_opt = db_manager_->createRoom("Project Omega", admin.getId());
+    ASSERT_TRUE(room_opt.has_value());
+    std::string room_id = room_opt->at("id").get<std::string>();
+
+    // 3. 添加成员
+    ASSERT_TRUE(db_manager_->addRoomMember(room_id, admin.getId()));
+    ASSERT_TRUE(db_manager_->addRoomMember(room_id, guest.getId()));
+
+    // 4. guest发送消息
+    ASSERT_TRUE(db_manager_->saveMessage(room_id, guest.getId(), "Task A complete.", 1000));
+    
+    // 5. admin获取消息并验证
+    auto messages = db_manager_->getMessages(room_id);
+    ASSERT_EQ(messages.size(), 1);
+    ASSERT_EQ(messages[0].at("sender").at("id").get<std::string>(), guest.getId());
+
+    // 6. admin移除guest
+    ASSERT_TRUE(db_manager_->removeRoomMember(room_id, guest.getId()));
+    auto members = db_manager_->getRoomMembers(room_id);
+    ASSERT_EQ(members.size(), 1);
+    ASSERT_EQ(members[0].at("id").get<std::string>(), admin.getId());
+
+    // 7. admin删除房间
+    ASSERT_TRUE(db_manager_->deleteRoom(room_id));
+    ASSERT_FALSE(db_manager_->roomExists(room_id));
 }
