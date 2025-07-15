@@ -39,7 +39,7 @@ TEST(HttpResponseTest, FluentInterfaceChaining) {
     EXPECT_THAT(resp_str, StartsWith("HTTP/1.1 418 Unknown\r\n"));
     EXPECT_THAT(resp_str, HasSubstr("X-Custom-Header: Hello C++\r\n"));
     EXPECT_THAT(resp_str, HasSubstr("Content-Type: text/plain\r\n"));
-    EXPECT_THAT(resp_str, HasSubstr("Content-Length: 13\r\n")); // "I'm a teapot" 的长度
+    EXPECT_THAT(resp_str, HasSubstr("Content-Length: 12\r\n")); // "I'm a teapot" 的长度
     EXPECT_THAT(resp_str, EndsWith("\r\n\r\nI'm a teapot"));
 }
 
