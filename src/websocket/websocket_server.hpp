@@ -1,43 +1,33 @@
 #pragma once
-
 #include <websocketpp/config/asio_no_tls.hpp>
 #include <websocketpp/server.hpp>
-#include <string>
-#include <set>
 #include <thread>
+#include <cstdint>
 #include <functional>
 
-class WebSocketServer {
-public:
-    typedef websocketpp::server<websocketpp::config::asio> server;
-    typedef server::message_ptr message_ptr;
-    typedef websocketpp::connection_hdl connection_hdl;
+using websocket_server = websocketpp::server<websocketpp::config::asio>;
+using connection_hdl = websocketpp::connection_hdl;
 
-    WebSocketServer();
+class WebSocketServer
+{
+public:
+    explicit WebSocketServer();
     ~WebSocketServer();
 
-    void start(int port);
+    // 在指定端口启动WebSocket服务器
+    void run(uint16_t port);
+
+    // 停止WebSocket服务器
     void stop();
-    void broadcast(const std::string& message);
-    void send(connection_hdl hdl, const std::string& message);
-    
-    // 设置消息处理回调
-    void setOnMessage(std::function<void(connection_hdl, message_ptr)> handler);
-    void setOnOpen(std::function<void(connection_hdl)> handler);
-    void setOnClose(std::function<void(connection_hdl)> handler);
-
 private:
-    server ws_server_;
-    std::set<connection_hdl, std::owner_less<connection_hdl>> connections_;
-    std::thread server_thread_;
-    bool running_;
+    //初始化服务器，绑定事件处理程序
+    void setup_handlers();
 
-    void onMessage(connection_hdl hdl, message_ptr msg);
-    void onOpen(connection_hdl hdl);
-    void onClose(connection_hdl hdl);
+    // 事件处理程序
+    void on_open(connection_hdl hdl);
+    void on_close(connection_hdl hdl);
+    void on_message(connection_hdl hdl,websocket_server::message_ptr msg);
 
-    // 用户定义的回调函数
-    std::function<void(connection_hdl, message_ptr)> on_message_handler_;
-    std::function<void(connection_hdl)> on_open_handler_;
-    std::function<void(connection_hdl)> on_close_handler_;
+    websocket_server server_; // WebSocket服务器实例
+    std::thread server_thread_; // 服务器运行线程
 };

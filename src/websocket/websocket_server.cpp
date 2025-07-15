@@ -1,146 +1,105 @@
 #include "websocket_server.hpp"
 #include "utils/logger.hpp"
-#include <iostream>
 
-WebSocketServer::WebSocketServer() : running_(false) {
-    // 设置日志级别
-    ws_server_.set_access_channels(websocketpp::log::alevel::all);
-    ws_server_.clear_access_channels(websocketpp::log::alevel::frame_payload);
-    
-    // 初始化ASIO
-    ws_server_.init_asio();
-    
-    // 设置默认的消息处理器
-    ws_server_.set_message_handler([this](connection_hdl hdl, message_ptr msg) {
-        onMessage(hdl, msg);
-    });
-    
-    ws_server_.set_open_handler([this](connection_hdl hdl) {
-        onOpen(hdl);
-    });
-    
-    ws_server_.set_close_handler([this](connection_hdl hdl) {
-        onClose(hdl);
-    });
+WebSocketServer::WebSocketServer()
+{
+    // 关闭websocketpp的日志
+    server_.clear_access_channels(websocketpp::log::alevel::all);
+    server_.clear_error_channels(websocketpp::log::elevel::all);
+
+    // 初始化Asio
+    server_.init_asio();
+
+    // 绑定事件处理程序
+    setup_handlers();
 }
 
-WebSocketServer::~WebSocketServer() {
-    stop();
-}
-
-void WebSocketServer::start(int port) {
-    try {
-        running_ = true;
-        
-        // 设置监听端口
-        ws_server_.listen(port);
-        
-        // 开始接受连接
-        ws_server_.start_accept();
-        
-        LOG_INFO << "WebSocket server starting on port " << port;
-        
-        // 在单独的线程中运行服务器
-        server_thread_ = std::thread([this]() {
-            try {
-                ws_server_.run();
-            } catch (const std::exception& e) {
-                LOG_ERROR << "WebSocket server error: " << e.what();
-            }
-        });
-        
-        LOG_INFO << "WebSocket server started successfully";
-        
-    } catch (const std::exception& e) {
-        LOG_ERROR << "Failed to start WebSocket server: " << e.what();
-        running_ = false;
-        throw;
+WebSocketServer::~WebSocketServer()
+{
+    // 停止服务器线程
+    if (server_thread_.joinable())
+    {
+        stop();
     }
 }
 
-void WebSocketServer::stop() {
-    if (running_) {
-        running_ = false;
-        
-        LOG_INFO << "Stopping WebSocket server...";
-        
-        // 停止服务器
-        ws_server_.stop();
-        
-        // 等待服务器线程结束
-        if (server_thread_.joinable()) {
-            server_thread_.join();
+void WebSocketServer::setup_handlers()
+{
+    using websocketpp::lib::bind;
+    using websocketpp::lib::placeholders::_1;
+    using websocketpp::lib::placeholders::_2;
+
+    // 新连接建立时调用on_open
+    server_.set_open_handler(bind(&WebSocketServer::on_open, this, _1));
+    // 连接关闭时调用on_close
+    server_.set_close_handler(bind(&WebSocketServer::on_close, this, _1));
+    // 接收到消息时调用on_message
+    server_.set_message_handler(bind(&WebSocketServer::on_message, this, _1, _2));
+}
+
+void WebSocketServer::run(uint16_t port)
+{
+    // 在一个新线程中启动服务器，避免阻塞主线程
+    server_thread_ = std::thread([this, port]()
+                                 {
+        try
+        {
+            //设置监听端口
+            server_.listen(port);
+            LOG_INFO << "WebSocket server listening on port " << port;
+
+            //开始接受连接
+            server_.start_accept();
+
+            //运行Asio事件循环
+            server_.run();
         }
-        
-        LOG_INFO << "WebSocket server stopped";
-    }
-}
-
-void WebSocketServer::broadcast(const std::string& message) {
-    LOG_DEBUG << "Broadcasting message to " << connections_.size() << " clients: " << message;
-    
-    for (auto& hdl : connections_) {
-        try {
-            ws_server_.send(hdl, message, websocketpp::frame::opcode::text);
-        } catch (const std::exception& e) {
-            LOG_ERROR << "Failed to send message to client: " << e.what();
+        catch (const websocketpp::exception &e)
+        {
+            LOG_ERROR << "WebSocket server error: " << e.what();
         }
+        catch (const std::exception &e)
+        {
+            LOG_ERROR << "WebSocket server error: " << e.what();
+        } });
+}
+
+void WebSocketServer::stop()
+{
+    if (!server_.is_listening())
+    {
+        return;
     }
+    LOG_INFO << "Stopping WebSocket server...";
+    server_.stop_listening(); // 停止监听新连接
+    server_.stop();           // 停止IO事件循环，导致run函数返回
+    server_thread_.join();    // 等待服务器线程结束
 }
 
-void WebSocketServer::send(connection_hdl hdl, const std::string& message) {
-    try {
-        ws_server_.send(hdl, message, websocketpp::frame::opcode::text);
-        LOG_DEBUG << "Sent message to client: " << message;
-    } catch (const std::exception& e) {
-        LOG_ERROR << "Failed to send message to specific client: " << e.what();
-    }
-}
+//-----事件处理函数的具体实现-----
 
-void WebSocketServer::setOnMessage(std::function<void(connection_hdl, message_ptr)> handler) {
-    on_message_handler_ = handler;
-}
-
-void WebSocketServer::setOnOpen(std::function<void(connection_hdl)> handler) {
-    on_open_handler_ = handler;
-}
-
-void WebSocketServer::setOnClose(std::function<void(connection_hdl)> handler) {
-    on_close_handler_ = handler;
-}
-
-void WebSocketServer::onMessage(connection_hdl hdl, message_ptr msg) {
-    LOG_DEBUG << "Received message: " << msg->get_payload();
-    
-    // 调用用户定义的消息处理器
-    if (on_message_handler_) {
-        on_message_handler_(hdl, msg);
-    } else {
-        // 默认行为：回显消息
-        try {
-            ws_server_.send(hdl, "Echo: " + msg->get_payload(), msg->get_opcode());
-        } catch (const std::exception& e) {
-            LOG_ERROR << "Failed to echo message: " << e.what();
-        }
-    }
-}
-
-void WebSocketServer::onOpen(connection_hdl hdl) {
+void WebSocketServer::on_open(connection_hdl hdl)
+{
     LOG_INFO << "New WebSocket connection opened";
-    connections_.insert(hdl);
-    
-    // 调用用户定义的连接打开处理器
-    if (on_open_handler_) {
-        on_open_handler_(hdl);
-    }
+    // 可以在这里处理新连接的初始化逻辑
 }
 
-void WebSocketServer::onClose(connection_hdl hdl) {
+void WebSocketServer::on_close(connection_hdl hdl)
+{
     LOG_INFO << "WebSocket connection closed";
-    connections_.erase(hdl);
-    
-    // 调用用户定义的连接关闭处理器
-    if (on_close_handler_) {
-        on_close_handler_(hdl);
+    // 可以在这里处理连接关闭的清理逻辑
+}
+
+void WebSocketServer::on_message(connection_hdl hdl, websocket_server::message_ptr msg)
+{
+    // 暂时只打印收到的消息，并将其原样发回（Echo服务）
+    LOG_INFO << "Received WebSocket message: " << msg->get_payload();
+    try
+    {
+        server_.send(hdl, msg->get_payload(), msg->get_opcode());
+    }
+    catch (const websocketpp::exception &e)
+    {
+        LOG_ERROR << "Failed to send message: " << e.what();
     }
 }
