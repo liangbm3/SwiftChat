@@ -42,12 +42,12 @@ std::optional<nlohmann::json> RoomRepository::createRoom(const std::string &name
     }
 }
 
-bool RoomRepository::deleteRoom(const std::string &name)
+bool RoomRepository::deleteRoom(const std::string &room_id)
 {
     if (!db_conn_->isConnected()) return false;
     
     std::lock_guard<std::recursive_mutex> lock(db_conn_->getMutex());
-    const char *sql = "DELETE FROM rooms WHERE name = ?;";
+    const char *sql = "DELETE FROM rooms WHERE id = ?;";
     sqlite3_stmt *stmt;
 
     if (sqlite3_prepare_v2(db_conn_->getDb(), sql, -1, &stmt, nullptr) != SQLITE_OK)
@@ -56,19 +56,19 @@ bool RoomRepository::deleteRoom(const std::string &name)
         return false;
     }
 
-    sqlite3_bind_text(stmt, 1, name.c_str(), -1, SQLITE_STATIC);
+    sqlite3_bind_text(stmt, 1, room_id.c_str(), -1, SQLITE_STATIC);
 
     bool success = (sqlite3_step(stmt) == SQLITE_DONE);
     sqlite3_finalize(stmt);
     return success;
 }
 
-bool RoomRepository::roomExists(const std::string &name)
+bool RoomRepository::roomExists(const std::string &room_id)
 {
     if (!db_conn_->isConnected()) return false;
     
     std::lock_guard<std::recursive_mutex> lock(db_conn_->getMutex());
-    const char *sql = "SELECT COUNT(*) FROM rooms WHERE name = ?;";
+    const char *sql = "SELECT COUNT(*) FROM rooms WHERE id = ?;";
     sqlite3_stmt *stmt;
 
     if (sqlite3_prepare_v2(db_conn_->getDb(), sql, -1, &stmt, nullptr) != SQLITE_OK)
@@ -77,7 +77,7 @@ bool RoomRepository::roomExists(const std::string &name)
         return false;
     }
 
-    sqlite3_bind_text(stmt, 1, name.c_str(), -1, SQLITE_STATIC);
+    sqlite3_bind_text(stmt, 1, room_id.c_str(), -1, SQLITE_STATIC);
 
     bool exists = false;
     if (sqlite3_step(stmt) == SQLITE_ROW)
@@ -219,102 +219,6 @@ bool RoomRepository::isRoomCreator(const std::string &room_id, const std::string
     return is_creator;
 }
 
-bool RoomRepository::addRoomMember(const std::string &room_name, const std::string &username)
-{
-    if (!db_conn_->isConnected()) return false;
-    
-    std::lock_guard<std::recursive_mutex> lock(db_conn_->getMutex());
-    
-    // 获取房间ID
-    const char *get_room_sql = "SELECT id FROM rooms WHERE name = ?;";
-    sqlite3_stmt *stmt;
-    std::string room_id;
-
-    if (sqlite3_prepare_v2(db_conn_->getDb(), get_room_sql, -1, &stmt, nullptr) != SQLITE_OK)
-    {
-        LOG_ERROR << "Failed to prepare statement: " << sqlite3_errmsg(db_conn_->getDb());
-        return false;
-    }
-
-    sqlite3_bind_text(stmt, 1, room_name.c_str(), -1, SQLITE_STATIC);
-
-    if (sqlite3_step(stmt) == SQLITE_ROW)
-    {
-        const char *id = reinterpret_cast<const char *>(sqlite3_column_text(stmt, 0));
-        room_id = std::string(id);
-    }
-    sqlite3_finalize(stmt);
-
-    if (room_id.empty())
-    {
-        LOG_ERROR << "Room not found: " << room_name;
-        return false;
-    }
-
-    // 获取用户ID
-    const char *get_user_sql = "SELECT id FROM users WHERE username = ?;";
-    std::string user_id;
-
-    if (sqlite3_prepare_v2(db_conn_->getDb(), get_user_sql, -1, &stmt, nullptr) != SQLITE_OK)
-    {
-        LOG_ERROR << "Failed to prepare statement: " << sqlite3_errmsg(db_conn_->getDb());
-        return false;
-    }
-
-    sqlite3_bind_text(stmt, 1, username.c_str(), -1, SQLITE_STATIC);
-
-    if (sqlite3_step(stmt) == SQLITE_ROW)
-    {
-        const char *id = reinterpret_cast<const char *>(sqlite3_column_text(stmt, 0));
-        user_id = std::string(id);
-    }
-    sqlite3_finalize(stmt);
-
-    if (user_id.empty())
-    {
-        LOG_ERROR << "User not found: " << username;
-        return false;
-    }
-
-    return addRoomMemberById(room_id, user_id);
-}
-
-bool RoomRepository::removeRoomMember(const std::string &room_name, const std::string &username)
-{
-    if (!db_conn_->isConnected()) return false;
-    
-    std::lock_guard<std::recursive_mutex> lock(db_conn_->getMutex());
-    
-    // 获取房间ID和用户ID，然后调用 removeRoomMemberById
-    const char *get_ids_sql = 
-        "SELECT r.id, u.id FROM rooms r, users u WHERE r.name = ? AND u.username = ?;";
-    sqlite3_stmt *stmt;
-
-    if (sqlite3_prepare_v2(db_conn_->getDb(), get_ids_sql, -1, &stmt, nullptr) != SQLITE_OK)
-    {
-        LOG_ERROR << "Failed to prepare statement: " << sqlite3_errmsg(db_conn_->getDb());
-        return false;
-    }
-
-    sqlite3_bind_text(stmt, 1, room_name.c_str(), -1, SQLITE_STATIC);
-    sqlite3_bind_text(stmt, 2, username.c_str(), -1, SQLITE_STATIC);
-
-    std::string room_id, user_id;
-    if (sqlite3_step(stmt) == SQLITE_ROW)
-    {
-        room_id = reinterpret_cast<const char *>(sqlite3_column_text(stmt, 0));
-        user_id = reinterpret_cast<const char *>(sqlite3_column_text(stmt, 1));
-    }
-    sqlite3_finalize(stmt);
-
-    if (room_id.empty() || user_id.empty())
-    {
-        return false;
-    }
-
-    return removeRoomMemberById(room_id, user_id);
-}
-
 std::vector<nlohmann::json> RoomRepository::getRoomMembers(const std::string &room_id) const
 {
     std::vector<nlohmann::json> members;
@@ -358,7 +262,7 @@ std::vector<nlohmann::json> RoomRepository::getRoomMembers(const std::string &ro
     return members;
 }
 
-bool RoomRepository::addRoomMemberById(const std::string &room_id, const std::string &user_id)
+bool RoomRepository::addRoomMember(const std::string &room_id, const std::string &user_id)
 {
     if (!db_conn_->isConnected()) return false;
     
@@ -381,7 +285,7 @@ bool RoomRepository::addRoomMemberById(const std::string &room_id, const std::st
     return success;
 }
 
-bool RoomRepository::removeRoomMemberById(const std::string &room_id, const std::string &user_id)
+bool RoomRepository::removeRoomMember(const std::string &room_id, const std::string &user_id)
 {
     if (!db_conn_->isConnected()) return false;
     
@@ -401,39 +305,6 @@ bool RoomRepository::removeRoomMemberById(const std::string &room_id, const std:
     bool success = (sqlite3_step(stmt) == SQLITE_DONE);
     sqlite3_finalize(stmt);
     return success;
-}
-
-std::vector<nlohmann::json> RoomRepository::getRoomMembersById(const std::string &room_id)
-{
-    std::vector<nlohmann::json> members;
-    if (!db_conn_->isConnected()) return members;
-    
-    std::lock_guard<std::recursive_mutex> lock(db_conn_->getMutex());
-    const char *sql = 
-        "SELECT u.id, u.username, u.is_online, rm.joined_at FROM room_members rm "
-        "JOIN users u ON rm.user_id = u.id WHERE rm.room_id = ?;";
-
-    sqlite3_stmt *stmt;
-    if (sqlite3_prepare_v2(db_conn_->getDb(), sql, -1, &stmt, nullptr) != SQLITE_OK)
-    {
-        LOG_ERROR << "Failed to prepare statement: " << sqlite3_errmsg(db_conn_->getDb());
-        return members;
-    }
-
-    sqlite3_bind_text(stmt, 1, room_id.c_str(), -1, SQLITE_STATIC);
-
-    while (sqlite3_step(stmt) == SQLITE_ROW)
-    {
-        nlohmann::json member;
-        member["id"] = reinterpret_cast<const char *>(sqlite3_column_text(stmt, 0));
-        member["username"] = reinterpret_cast<const char *>(sqlite3_column_text(stmt, 1));
-        member["is_online"] = sqlite3_column_int(stmt, 2) > 0;
-        member["joined_at"] = sqlite3_column_int64(stmt, 3);
-        members.push_back(member);
-    }
-
-    sqlite3_finalize(stmt);
-    return members;
 }
 
 std::string RoomRepository::generateRoomId()

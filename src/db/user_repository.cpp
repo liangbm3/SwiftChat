@@ -60,12 +60,12 @@ bool UserRepository::validateUser(const std::string &username, const std::string
     return valid;
 }
 
-bool UserRepository::userExists(const std::string &username)
+bool UserRepository::userExists(const std::string &user_id)
 {
     if (!db_conn_->isConnected()) return false;
     
     std::lock_guard<std::recursive_mutex> lock(db_conn_->getMutex());
-    const char *sql = "SELECT COUNT(*) FROM users WHERE username = ?;";
+    const char *sql = "SELECT COUNT(*) FROM users WHERE id = ?;";
     sqlite3_stmt *stmt;
     
     if (sqlite3_prepare_v2(db_conn_->getDb(), sql, -1, &stmt, nullptr) != SQLITE_OK)
@@ -74,7 +74,7 @@ bool UserRepository::userExists(const std::string &username)
         return false;
     }
 
-    sqlite3_bind_text(stmt, 1, username.c_str(), -1, SQLITE_STATIC);
+    sqlite3_bind_text(stmt, 1, user_id.c_str(), -1, SQLITE_STATIC);
 
     bool exists = false;
     if (sqlite3_step(stmt) == SQLITE_ROW)
@@ -86,12 +86,12 @@ bool UserRepository::userExists(const std::string &username)
     return exists;
 }
 
-bool UserRepository::setUserOnlineStatus(const std::string &username, bool is_online)
+bool UserRepository::setUserOnlineStatus(const std::string &user_id, bool is_online)
 {
     if (!db_conn_->isConnected()) return false;
     
     std::lock_guard<std::recursive_mutex> lock(db_conn_->getMutex());
-    const char *sql = "UPDATE users SET is_online = ? WHERE username = ?;";
+    const char *sql = "UPDATE users SET is_online = ? WHERE id = ?;";
     sqlite3_stmt *stmt;
 
     if (sqlite3_prepare_v2(db_conn_->getDb(), sql, -1, &stmt, nullptr) != SQLITE_OK)
@@ -101,14 +101,14 @@ bool UserRepository::setUserOnlineStatus(const std::string &username, bool is_on
     }
 
     sqlite3_bind_int(stmt, 1, is_online ? 1 : 0);
-    sqlite3_bind_text(stmt, 2, username.c_str(), -1, SQLITE_STATIC);
+    sqlite3_bind_text(stmt, 2, user_id.c_str(), -1, SQLITE_STATIC);
 
     bool success = (sqlite3_step(stmt) == SQLITE_DONE);
     sqlite3_finalize(stmt);
     return success;
 }
 
-bool UserRepository::updateUserLastActiveTime(const std::string &username)
+bool UserRepository::updateUserLastActiveTime(const std::string &user_id)
 {
     if (!db_conn_->isConnected()) return false;
     
@@ -116,7 +116,7 @@ bool UserRepository::updateUserLastActiveTime(const std::string &username)
     int64_t current_time = std::chrono::duration_cast<std::chrono::milliseconds>(
         std::chrono::system_clock::now().time_since_epoch()).count();
 
-    const char *sql = "UPDATE users SET last_active_time = ? WHERE username = ?;";
+    const char *sql = "UPDATE users SET last_active_time = ? WHERE id = ?;";
     sqlite3_stmt *stmt;
 
     if (sqlite3_prepare_v2(db_conn_->getDb(), sql, -1, &stmt, nullptr) != SQLITE_OK)
@@ -126,7 +126,7 @@ bool UserRepository::updateUserLastActiveTime(const std::string &username)
     }
 
     sqlite3_bind_int64(stmt, 1, current_time);
-    sqlite3_bind_text(stmt, 2, username.c_str(), -1, SQLITE_STATIC);
+    sqlite3_bind_text(stmt, 2, user_id.c_str(), -1, SQLITE_STATIC);
 
     bool success = (sqlite3_step(stmt) == SQLITE_DONE);
     sqlite3_finalize(stmt);

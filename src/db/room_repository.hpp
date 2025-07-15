@@ -13,8 +13,8 @@ public:
 
     // 房间基本操作
     std::optional<nlohmann::json> createRoom(const std::string &name, const std::string &creator_id);
-    bool deleteRoom(const std::string &name);// 删除房间
-    bool roomExists(const std::string &name);// 房间是否存在
+    bool deleteRoom(const std::string &room_id);// 根据ID删除房间
+    bool roomExists(const std::string &room_id);// 根据ID检查房间是否存在
     bool updateRoom(const std::string &room_id, const std::string &name, const std::string &description);// 更新房间
     
     // 房间查询
@@ -23,12 +23,9 @@ public:
     bool isRoomCreator(const std::string &room_id, const std::string &user_id);// 检查是否为房间创建者
     
     // 房间成员管理
-    bool addRoomMember(const std::string &room_name, const std::string &username);// 添加房间成员
-    bool removeRoomMember(const std::string &room_name, const std::string &username);// 移除房间成员
     std::vector<nlohmann::json> getRoomMembers(const std::string &room_id) const;// 获取房间成员
-    bool addRoomMemberById(const std::string &room_id, const std::string &user_id);// 根据ID添加房间成员
-    bool removeRoomMemberById(const std::string &room_id, const std::string &user_id);// 根据ID移除房间成员
-    std::vector<nlohmann::json> getRoomMembersById(const std::string &room_id);// 根据ID获取房间成员
+    bool addRoomMember(const std::string &room_id, const std::string &user_id);// 根据ID添加房间成员
+    bool removeRoomMember(const std::string &room_id, const std::string &user_id);// 根据ID移除房间成员
     
     // 工具方法
     std::string generateRoomId();

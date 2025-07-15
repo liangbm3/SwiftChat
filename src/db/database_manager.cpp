@@ -30,19 +30,19 @@ bool DatabaseManager::validateUser(const std::string &username, const std::strin
     return user_repo_ ? user_repo_->validateUser(username, password_hash) : false;
 }
 
-bool DatabaseManager::userExists(const std::string &username)
+bool DatabaseManager::userExists(const std::string &user_id)
 {
-    return user_repo_ ? user_repo_->userExists(username) : false;
+    return user_repo_ ? user_repo_->userExists(user_id) : false;
 }
 
-bool DatabaseManager::setUserOnlineStatus(const std::string &username, bool is_online)
+bool DatabaseManager::setUserOnlineStatus(const std::string &user_id, bool is_online)
 {
-    return user_repo_ ? user_repo_->setUserOnlineStatus(username, is_online) : false;
+    return user_repo_ ? user_repo_->setUserOnlineStatus(user_id, is_online) : false;
 }
 
-bool DatabaseManager::updateUserLastActiveTime(const std::string &username)
+bool DatabaseManager::updateUserLastActiveTime(const std::string &user_id)
 {
-    return user_repo_ ? user_repo_->updateUserLastActiveTime(username) : false;
+    return user_repo_ ? user_repo_->updateUserLastActiveTime(user_id) : false;
 }
 
 bool DatabaseManager::checkAndUpdateInactiveUsers(int64_t timeout_ms)
@@ -77,14 +77,14 @@ std::optional<nlohmann::json> DatabaseManager::createRoom(const std::string &nam
     return room_repo_ ? room_repo_->createRoom(name, creator_id) : std::nullopt;
 }
 
-bool DatabaseManager::deleteRoom(const std::string &name)
+bool DatabaseManager::deleteRoom(const std::string &room_id)
 {
-    return room_repo_ ? room_repo_->deleteRoom(name) : false;
+    return room_repo_ ? room_repo_->deleteRoom(room_id) : false;
 }
 
-bool DatabaseManager::roomExists(const std::string &name)
+bool DatabaseManager::roomExists(const std::string &room_id)
 {
-    return room_repo_ ? room_repo_->roomExists(name) : false;
+    return room_repo_ ? room_repo_->roomExists(room_id) : false;
 }
 
 std::vector<std::string> DatabaseManager::getRooms()
@@ -113,56 +113,30 @@ bool DatabaseManager::isRoomCreator(const std::string &room_id, const std::strin
 }
 
 // 房间成员操作代理
-bool DatabaseManager::addRoomMember(const std::string &room_name, const std::string &username)
-{
-    return room_repo_ ? room_repo_->addRoomMember(room_name, username) : false;
-}
-
-bool DatabaseManager::removeRoomMember(const std::string &room_name, const std::string &username)
-{
-    return room_repo_ ? room_repo_->removeRoomMember(room_name, username) : false;
-}
-
 std::vector<nlohmann::json> DatabaseManager::getRoomMembers(const std::string &room_id) const
 {
     return room_repo_ ? room_repo_->getRoomMembers(room_id) : std::vector<nlohmann::json>();
 }
 
-bool DatabaseManager::addRoomMemberById(const std::string &room_id, const std::string &user_id)
+bool DatabaseManager::addRoomMember(const std::string &room_id, const std::string &user_id)
 {
-    return room_repo_ ? room_repo_->addRoomMemberById(room_id, user_id) : false;
+    return room_repo_ ? room_repo_->addRoomMember(room_id, user_id) : false;
 }
 
-bool DatabaseManager::removeRoomMemberById(const std::string &room_id, const std::string &user_id)
+bool DatabaseManager::removeRoomMember(const std::string &room_id, const std::string &user_id)
 {
-    return room_repo_ ? room_repo_->removeRoomMemberById(room_id, user_id) : false;
-}
-
-std::vector<nlohmann::json> DatabaseManager::getRoomMembersById(const std::string &room_id)
-{
-    return room_repo_ ? room_repo_->getRoomMembersById(room_id) : std::vector<nlohmann::json>();
+    return room_repo_ ? room_repo_->removeRoomMember(room_id, user_id) : false;
 }
 
 // 消息操作代理
-bool DatabaseManager::saveMessage(const std::string &room_name, const std::string &username,
+bool DatabaseManager::saveMessage(const std::string &room_id, const std::string &user_id,
                                    const std::string &content, int64_t timestamp)
 {
-    return message_repo_ ? message_repo_->saveMessage(room_name, username, content, timestamp) : false;
+    return message_repo_ ? message_repo_->saveMessage(room_id, user_id, content, timestamp) : false;
 }
 
-std::vector<nlohmann::json> DatabaseManager::getMessages(const std::string &room_name, int64_t since)
+std::vector<nlohmann::json> DatabaseManager::getMessages(const std::string &room_id, int limit,
+                                                          int64_t before_timestamp)
 {
-    return message_repo_ ? message_repo_->getMessages(room_name, since) : std::vector<nlohmann::json>();
-}
-
-bool DatabaseManager::saveMessageById(const std::string &room_id, const std::string &user_id,
-                                       const std::string &content, int64_t timestamp)
-{
-    return message_repo_ ? message_repo_->saveMessageById(room_id, user_id, content, timestamp) : false;
-}
-
-std::vector<nlohmann::json> DatabaseManager::getMessagesById(const std::string &room_id, int limit,
-                                                              int64_t before_timestamp)
-{
-    return message_repo_ ? message_repo_->getMessagesById(room_id, limit, before_timestamp) : std::vector<nlohmann::json>();
+    return message_repo_ ? message_repo_->getMessages(room_id, limit, before_timestamp) : std::vector<nlohmann::json>();
 }

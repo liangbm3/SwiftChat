@@ -15,11 +15,11 @@ public:
     // 用户基本操作
     bool createUser(const std::string &username, const std::string &password_hash);// 创建用户
     bool validateUser(const std::string &username, const std::string &password_hash);// 验证用户
-    bool userExists(const std::string &username);// 检查用户是否存在
+    bool userExists(const std::string &user_id);// 根据ID检查用户是否存在
 
     // 用户状态管理
-    bool setUserOnlineStatus(const std::string &username, bool is_online);// 设置用户在线状态
-    bool updateUserLastActiveTime(const std::string &username);// 更新用户最后活跃时间
+    bool setUserOnlineStatus(const std::string &user_id, bool is_online);// 根据ID设置用户在线状态
+    bool updateUserLastActiveTime(const std::string &user_id);// 根据ID更新用户最后活跃时间
     bool checkAndUpdateInactiveUsers(int64_t timeout_ms);// 检查并更新不活跃用户
     
     // 用户查询
