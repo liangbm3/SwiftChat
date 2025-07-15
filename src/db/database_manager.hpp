@@ -2,48 +2,68 @@
 
 #include <string>
 #include <memory>
-#include <vector>
-#include <sqlite3.h>
-#include <nlohmann/json.hpp>
-#include <mutex>
-#include "chat/user.hpp"
+#include "database_connection.hpp"
+#include "user_repository.hpp"
+#include "room_repository.hpp"
+#include "message_repository.hpp"
 
-// 数据库管理类
+// 重构后的数据库管理类 - 作为各个仓库的组合
 class DatabaseManager
 {
 public:
-    DatabaseManager(const std::string &db_path);
-    ~DatabaseManager();
+    explicit DatabaseManager(const std::string &db_path);
+    ~DatabaseManager() = default;
 
-    // 用户操作
-    bool createUser(const std::string &username, const std::string &password_hash);//创建用户
-    bool validateUser(const std::string &username, const std::string &password_hash);//验证用户
-    bool userExists(const std::string &username);//用户是否存在
-    bool setUserOnlineStatus(const std::string &username, bool is_online);//设置用户在线状态
-    bool updateUserLastActiveTime(const std::string &username);//更新用户最后活跃时间
-    bool checkAndUpdateInactiveUsers(int64_t timeout_ms);//检查并更新不活跃用户
-    std::vector<User> getAllUsers();//获取所有用户
-    // 房间操作
-    bool createRoom(const std::string &name, const std::string &creator);//创建房间
-    bool deleteRoom(const std::string &name);//删除房间
-    bool roomExists(const std::string &name);//房间是否存在
-    std::vector<std::string> getRooms();//获取所有房间
+    // 检查数据库连接状态
+    bool isConnected() const;
 
-    // 房间成员操作
-    bool addRoomMember(const std::string &room_name, const std::string &username);//添加房间成员
-    bool removeRoomMember(const std::string &room_name, const std::string &username);//移除房间成员
-    std::vector<std::string> getRoomMembers(const std::string &room_name);//获取房间成员
+    // 用户操作代理
+    bool createUser(const std::string &username, const std::string &password_hash);
+    bool validateUser(const std::string &username, const std::string &password_hash);
+    bool userExists(const std::string &username);
+    bool setUserOnlineStatus(const std::string &username, bool is_online);
+    bool updateUserLastActiveTime(const std::string &username);
+    bool checkAndUpdateInactiveUsers(int64_t timeout_ms);
+    std::vector<User> getAllUsers();
+    std::optional<User> getUserById(const std::string &user_id) const;
+    std::optional<User> getUserByUsername(const std::string &username) const;
+    std::string generateUserId();
 
-    // 消息操作
+    // 房间操作代理
+    std::optional<nlohmann::json> createRoom(const std::string &name, const std::string &creator_id);
+    bool deleteRoom(const std::string &name);
+    bool roomExists(const std::string &name);
+    std::vector<std::string> getRooms();
+    std::optional<nlohmann::json> getRoomById(const std::string &room_id) const;
+    std::string generateRoomId();
+    bool updateRoom(const std::string &room_id, const std::string &name, const std::string &description);
+    bool isRoomCreator(const std::string &room_id, const std::string &user_id);
+
+    // 房间成员操作代理
+    bool addRoomMember(const std::string &room_name, const std::string &username);
+    bool removeRoomMember(const std::string &room_name, const std::string &username);
+    std::vector<nlohmann::json> getRoomMembers(const std::string &room_id) const;
+    bool addRoomMemberById(const std::string &room_id, const std::string &user_id);
+    bool removeRoomMemberById(const std::string &room_id, const std::string &user_id);
+    std::vector<nlohmann::json> getRoomMembersById(const std::string &room_id);
+
+    // 消息操作代理
     bool saveMessage(const std::string &room_name, const std::string &username,
-                     const std::string &content, int64_t timestamp);//保存消息
-    std::vector<nlohmann::json> getMessages(const std::string &room_name, int64_t since = 0);//获取消息
+                     const std::string &content, int64_t timestamp);
+    std::vector<nlohmann::json> getMessages(const std::string &room_name, int64_t since = 0);
+    bool saveMessageById(const std::string &room_id, const std::string &user_id,
+                         const std::string &content, int64_t timestamp);
+    std::vector<nlohmann::json> getMessagesById(const std::string &room_id, int limit = 50,
+                                                int64_t before_timestamp = 0);
+
+    // 获取各个仓库的直接访问（如果需要更复杂的操作）
+    UserRepository* getUserRepository() { return user_repo_.get(); }
+    RoomRepository* getRoomRepository() { return room_repo_.get(); }
+    MessageRepository* getMessageRepository() { return message_repo_.get(); }
 
 private:
-    bool initializeTables();
-    bool executeQuery(const std::string &query);
-
-    sqlite3 *db_;                // 指向sqlite3 结构体的指针
-    std::string db_path_;        // 数据库路径
-    std::recursive_mutex mutex_; // 递归互斥锁
+    std::unique_ptr<DatabaseConnection> db_conn_;// 数据库连接
+    std::unique_ptr<UserRepository> user_repo_;// 用户仓库
+    std::unique_ptr<RoomRepository> room_repo_;// 房间仓库
+    std::unique_ptr<MessageRepository> message_repo_;// 消息仓库
 };
