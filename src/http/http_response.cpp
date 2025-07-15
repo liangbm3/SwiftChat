@@ -1,104 +1,120 @@
 #include "http_response.hpp"
 #include <sstream>
-#include <algorithm>
 #include <chrono>
 #include <iomanip>
-#include <cstdio>
 
 namespace http
 {
-    // 辅助函数：转义JSON字符串中的特殊字符
-    std::string escapeJsonString(const std::string& str) {
-        std::string escaped;
-        escaped.reserve(str.length() * 2); // 预留空间
-        
-        for (char c : str) {
-            switch (c) {
-                case '"': escaped += "\\\""; break;
-                case '\\': escaped += "\\\\"; break;
-                case '\b': escaped += "\\b"; break;
-                case '\f': escaped += "\\f"; break;
-                case '\n': escaped += "\\n"; break;
-                case '\r': escaped += "\\r"; break;
-                case '\t': escaped += "\\t"; break;
-                default:
-                    if (c < 0x20) {
-                        // 控制字符用unicode转义
-                        std::stringstream uss;
-                        uss << "\\u" << std::hex << std::setw(4) << std::setfill('0') 
-                            << static_cast<unsigned char>(c);
-                        escaped += uss.str();
-                    } else {
-                        escaped += c;
-                    }
-                    break;
-            }
+
+    HttpResponse::HttpResponse() : status_code_(200)
+    {
+        // 设置最基本的默认响应头
+        headers_["Server"] = "SwiftChat/1.0";
+        headers_["Date"] = getHttpDate();
+        headers_["Connection"] = "close";
+    }
+
+    // --- 流式接口实现 ---
+
+    HttpResponse &HttpResponse::withStatus(int code)
+    {
+        status_code_ = code;
+        return *this;
+    }
+
+    HttpResponse &HttpResponse::withHeader(const std::string &key, const std::string &value)
+    {
+        headers_[key] = value;
+        return *this;
+    }
+
+    HttpResponse &HttpResponse::withBody(const std::string &body_content, const std::string &content_type)
+    {
+        body_ = body_content;
+        headers_["Content-Type"] = content_type;
+        return *this;
+    }
+
+    HttpResponse &HttpResponse::withJsonBody(const nlohmann::json &json_body)
+    {
+        body_ = json_body.dump(); // 使用库进行序列化
+        headers_["Content-Type"] = "application/json; charset=utf-8";
+        return *this;
+    }
+
+    // --- 静态工厂方法实现 ---
+    HttpResponse HttpResponse::Ok(const std::string &body)
+    {
+        return HttpResponse().withStatus(200).withBody(body);
+    }
+
+    HttpResponse HttpResponse::Created(const std::string &body)
+    {
+        return HttpResponse().withStatus(201).withJsonBody({{"message", body}});
+    }
+
+    HttpResponse HttpResponse::BadRequest(const std::string &error_message)
+    {
+        return HttpResponse().withStatus(400).withJsonBody({{"error", error_message}});
+    }
+
+    HttpResponse HttpResponse::Unauthorized(const std::string &error_message)
+    {
+        return HttpResponse().withStatus(401).withJsonBody({{"error", error_message}});
+    }
+
+    HttpResponse HttpResponse::Forbidden(const std::string &error_message)
+    {
+        return HttpResponse().withStatus(403).withJsonBody({{"error", error_message}});
+    }
+
+    HttpResponse HttpResponse::NotFound(const std::string &error_message)
+    {
+        return HttpResponse().withStatus(404).withJsonBody({{"error", error_message}});
+    }
+
+    HttpResponse HttpResponse::InternalError(const std::string &error_message)
+    {
+        return HttpResponse().withStatus(500).withJsonBody({{"error", error_message}});
+    }
+
+    HttpResponse HttpResponse::NoContent()
+    {
+        // 创建一个204响应。根据规范，body应为空。
+        return HttpResponse().withStatus(204).withBody("");
+    }
+
+    // --- 序列化 ---
+    std::string HttpResponse::toString() const
+    {
+        std::stringstream ss;
+        ss << "HTTP/1.1 " << status_code_ << " " << getStatusText(status_code_) << "\r\n";
+
+        // 确保Content-Length总是最新的
+        ss << "Content-Length: " << body_.length() << "\r\n";
+
+        for (const auto &header : headers_)
+        {
+            ss << header.first << ": " << header.second << "\r\n";
         }
-        return escaped;
+        ss << "\r\n";
+        ss << body_;
+        return ss.str();
     }
-    
-    // 辅助函数：简单检查是否为JSON格式
-    bool isJsonLike(const std::string& str) {
-        if (str.empty()) return false;
-        
-        // 去除首尾空白字符
-        auto start = str.find_first_not_of(" \t\n\r");
-        auto end = str.find_last_not_of(" \t\n\r");
-        
-        if (start == std::string::npos) return false;
-        
-        char first = str[start];
-        char last = str[end];
-        
-        return (first == '{' && last == '}') || (first == '[' && last == ']');
-    }
-    
-    // 辅助函数：获取当前时间的HTTP格式字符串
-    std::string getHttpDate() {
+
+    // --- 私有辅助函数 ---
+    std::string HttpResponse::getHttpDate()
+    {
         auto now = std::chrono::system_clock::now();
         auto time_t = std::chrono::system_clock::to_time_t(now);
-        
         std::stringstream ss;
         ss << std::put_time(std::gmtime(&time_t), "%a, %d %b %Y %H:%M:%S GMT");
         return ss.str();
     }
 
-    HttpResponse::HttpResponse(int code, const std::string &body_content)
-        : status_code(code), body(body_content)
-    {
-        // 设置默认响应头
-        headers["Server"] = "SwiftChat/1.0";
-        headers["Date"] = getHttpDate();
-        headers["Connection"] = "close";
-        
-        // 处理响应体和Content-Type
-        if (body.empty()) {
-            headers["Content-Type"] = "text/plain";
-        } else if (isJsonLike(body)) {
-            headers["Content-Type"] = "application/json; charset=utf-8";
-        } else {
-            // 将普通文本消息转换为JSON格式
-            body = "{\"message\":\"" + escapeJsonString(body) + "\"}";
-            headers["Content-Type"] = "application/json; charset=utf-8";
-        }
-    }
-
-    std::string HttpResponse::toString() const
-    {
-        std::stringstream ss;
-        ss << "HTTP/1.1 " << status_code << " " << getStatusText(status_code) << "\r\n";
-        ss << "Content-Length: " << body.length() << "\r\n";
-        for (const auto &header : headers)
-        {
-            ss << header.first << ": " << header.second << "\r\n";
-        }
-        ss << "\r\n";
-        ss << body;
-        return ss.str();
-    }
-
     std::string HttpResponse::getStatusText(int code)
     {
+        // (这里的 switch 语句实现与您原来的一样，保持不变)
         switch (code)
         {
         case 200:
