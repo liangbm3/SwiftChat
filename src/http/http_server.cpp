@@ -173,7 +173,11 @@ namespace http
                 // 3. [优化] 应用中间件和路由
                 response = routeRequest(request);
             }
-
+            // 添加CORS头和自定义响应头
+            response.withHeader("Access-Control-Allow-Origin", "*")
+                .withHeader("Access-Control-Allow-Methods", "GET, POST, PUT, DELETE, OPTIONS")
+                .withHeader("Access-Control-Allow-Headers", "Content-Type, Authorization, X-Requested-With")
+                .withHeader("X-Server", "SwiftChat/1.0");
             // 4. 发送响应
             std::string response_str = response.toString();
             send(client_fd, response_str.c_str(), response_str.length(), 0);
@@ -191,6 +195,17 @@ namespace http
     // [新增] 路由与中间件处理
     HttpResponse HttpServer::routeRequest(const HttpRequest &request)
     {
+        // 处理所有 OPTIONS 请求（CORS 预检）
+        if (request.getMethod() == "OPTIONS")
+        {
+            LOG_INFO << "Handling CORS preflight request for: " << request.getPath();
+            return HttpResponse::Ok()
+                .withHeader("Access-Control-Allow-Origin", "*")
+                .withHeader("Access-Control-Allow-Methods", "GET, POST, PUT, DELETE, OPTIONS")
+                .withHeader("Access-Control-Allow-Headers", "Content-Type, Authorization, X-Requested-With")
+                .withHeader("Access-Control-Max-Age", "86400") // 缓存24小时
+                .withBody("", "text/plain");
+        }
         // 遍历注册的所有路由
         for (const auto &route : routes_)
         {
