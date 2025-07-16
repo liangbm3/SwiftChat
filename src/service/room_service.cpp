@@ -5,113 +5,143 @@
 #include "http/http_response.hpp"
 #include "utils/logger.hpp"
 #include <nlohmann/json.hpp>
+#include <jwt-cpp/jwt.h>
 
 using json = nlohmann::json;
 
 RoomService::RoomService(DatabaseManager &db_manager) : db_manager_(db_manager) {}
 
-void RoomService::registerRoutes(http::HttpServer &server)
+std::optional<std::string> RoomService::getUserIdFromRequest(const http::HttpRequest &request)
 {
-    // 注册房间相关的HTTP路由
-    server.addHandler("/api/rooms/create", "POST", [this](const http::HttpRequest &request) -> http::HttpResponse
-                      { return handleCreateRoom(request); });
+    auto auth_header = request.getHeaderValue("Authorization");
+    if(!auth_header)
+    {
+        LOG_ERROR << "Authorization header is missing in the request.";
+        return std::nullopt;
+    }
 
-    server.addHandler("/api/rooms/join", "POST", [this](const http::HttpRequest &request) -> http::HttpResponse
-                      { return handleJoinRoom(request); });
-
-    server.addHandler("/api/rooms/list", "GET", [this](const http::HttpRequest &request) -> http::HttpResponse
-                      { return handleGetRooms(request); });
+    std::string token_str = std::string(auth_header->substr(7)); // 去掉 "Bearer " 前缀
+    try
+    {
+        auto decoded_token = jwt::decode(token_str);
+        return decoded_token.get_subject(); // 使用 subject 声明获取用户ID
+    }
+    catch(const std::exception& e)
+    {
+        LOG_ERROR << "Failed to decode JWT: " << e.what();
+        return std::nullopt;
+    }
 }
 
 http::HttpResponse RoomService::handleCreateRoom(const http::HttpRequest &request)
 {
-    // 这里需要检查用户是否已登录 (通过JWT或Session) !!!
-    LOG_INFO << "Handling create room request...";
+    auto user_id_opt = getUserIdFromRequest(request);//获取创建者ID
+    if (!user_id_opt)
+    {
+        LOG_ERROR << "Failed to get user ID from request.";
+        return http::HttpResponse::Unauthorized("Invalid or missing JWT token.");
+    }
+    
+    std::string user_id = *user_id_opt;
+
+    json request_body;
     try
     {
-        if (request.body.empty())
+        request_body = json::parse(request.getBody());
+        std::string room_name = request_body.at("name").get<std::string>();//尝试获取房间名
+        //调用DB接口创建房间
+        auto room_json_opt = db_manager_.createRoom(room_name, user_id);
+        if (!room_json_opt)
         {
-            LOG_ERROR << "Request body is empty";
-            return http::HttpResponse(400, "{\"error\":\"Request body is empty\"}");
+            LOG_ERROR << "Failed to create room for user: " << user_id;
+            return http::HttpResponse::InternalError("Failed to create room.");
         }
-        json request_json = json::parse(request.body);
-        std::string room_name = request_json.at("name").get<std::string>();
-        std::string creator = request_json.at("creator").get<std::string>();
-        if (room_name.empty() || creator.empty())
-        {
-            LOG_ERROR << "Room name and creator cannot be empty";
-            return http::HttpResponse(400, "{\"error\":\"Room name and creator cannot be empty\"}");
-        }
-        if (db_manager_.roomExists(room_name))
-        {
-            LOG_ERROR << "Room already exists: " << room_name;
-            return http::HttpResponse(400, "{\"error\":\"Room already exists\"}");
-        }
-        if (db_manager_.createRoom(room_name, creator))
-        {
-            // 创建成功后，自动加入房间
-            db_manager_.addRoomMember(room_name, creator);
-            LOG_INFO << "Room created successfully: " << room_name << " by " << creator;
-            return http::HttpResponse(201, "{\"status\":\"success\",\"message\":\"Room created successfully\"}");
-        }
-        else
-        {
-            LOG_ERROR << "Failed to create room: " << room_name;
-            return http::HttpResponse(500, "{\"error\":\"Failed to create room\"}");
-        }
+
+        //创建者自动加入房间
+        std::string room_id = room_json_opt->at("id").get<std::string>();
+        db_manager_.addRoomMember(room_id, user_id);
+
+        return http::HttpResponse::Created().withJsonBody(*room_json_opt);
     }
-    catch (const json::exception &e)
+    catch (const json::parse_error &e)
     {
-        LOG_ERROR << "JSON parsing error: " << e.what();
-        return http::HttpResponse(400, "{\"error\":\"Invalid JSON format\"}");
+        LOG_ERROR << "Failed to parse JSON body: " << e.what();
+        return http::HttpResponse::BadRequest("Invalid JSON format.");
+    }
+    catch(const json::out_of_range &e)
+    {
+        LOG_ERROR << "Missing required fields in JSON body: " << e.what();
+        return http::HttpResponse::BadRequest("Missing required fields in JSON body.");
+    }
+    catch (const std::exception &e)
+    {
+        LOG_ERROR << "Unexpected error while creating room: " << e.what();
+        return http::HttpResponse::InternalError("Unexpected error occurred.");
     }
 }
 
 http::HttpResponse RoomService::handleJoinRoom(const http::HttpRequest &request)
 {
-    // 这里需要检查用户是否已登录 (通过JWT或Session) !!!
-    LOG_INFO << "Handling join room request...";
+    // 获取当前用户的ID
+    auto user_id_opt = getUserIdFromRequest(request);
+    if (!user_id_opt)
+    {
+        LOG_ERROR << "Failed to get user ID from request.";
+        return http::HttpResponse::Unauthorized("Invalid or missing JWT token.");
+    }
+
+    std::string user_id = *user_id_opt;
+
     try
     {
-        json data = json::parse(request.body);
-        if (!data.contains("room_name") || !data.contains("username"))
+        // 从请求体中获取房间ID
+        auto json_body = json::parse(request.getBody());
+        std::string room_id = json_body.value("room_id", "");
+        
+        //检查房间和用户是否存在
+        if(!db_manager_.roomExists(room_id)||!db_manager_.userExists(user_id))
         {
-            LOG_ERROR << "Missing room_name or username in join_room request";
-            return http::HttpResponse(400, "{\"error\":\"Missing room_name or username\"}");
+            LOG_ERROR << "Room or user does not exist. Room ID: " << room_id << ", User ID: " << user_id;
+            return http::HttpResponse::NotFound("Room or user does not exist.");
         }
-        std::string room_name = data["room_name"];
-        std::string username = data["username"];
 
-        if (db_manager_.addRoomMember(room_name, username))
+        //将用户加入房间
+        if (!db_manager_.addRoomMember(room_id, user_id))
         {
-            LOG_INFO << "User " << username << " joined room: " << room_name;
-            return http::HttpResponse(200, "{\"status\":\"success\",\"message\":\"Joined room successfully\"}");
-        }
-        else
-        {
-            LOG_ERROR << "Failed to add user to room: " << room_name;
-            return http::HttpResponse(500, "{\"error\":\"Failed to join room\"}");
+            LOG_ERROR << "Failed to add user to room. Room ID: " << room_id << ", User ID: " << user_id;
+            return http::HttpResponse::InternalError("Failed to join room.");
         }
     }
-    catch (const json::exception &e)
+    catch(const std::exception& e)
     {
-        LOG_ERROR << "JSON parsing error: " << e.what();
-        return http::HttpResponse(400, "{\"error\":\"Invalid JSON format\"}");
+        LOG_ERROR << "Failed to get rooms for user: " << user_id << ", Error: " << e.what();
+        return http::HttpResponse::InternalError("Failed to get rooms.");
     }
+    catch(const json::parse_error &e)
+    {
+        LOG_ERROR << "Failed to parse JSON body: " << e.what();
+        return http::HttpResponse::BadRequest("Invalid JSON format.");
+    }
+    catch(const json::out_of_range &e)
+    {
+        LOG_ERROR << "Missing required fields in JSON body: " << e.what();
+        return http::HttpResponse::BadRequest("Missing required fields in JSON body.");
+    }
+    
 }
 
 http::HttpResponse RoomService::handleGetRooms(const http::HttpRequest &request)
 {
-    LOG_INFO << "Handling get rooms request...";
-    auto rooms = db_manager_.getRooms();
-    json response_data = json::array();
-    for (const auto &room : rooms)
+    try
     {
-        json room_data =
-            {
-                {"name", room},
-                {"members", db_manager_.getRoomMembers(room)}};
-        response_data.push_back(room_data);
+        auto rooms=db_manager_.getRooms();
+        json json_response = rooms;
+        return http::HttpResponse::Ok().withJsonBody(json_response);
     }
-    return http::HttpResponse(200, response_data.dump());
+    catch(const std::exception& e)
+    {
+        LOG_ERROR << "Failed to get rooms: " << e.what();
+        return http::HttpResponse::InternalError("Failed to get rooms.");
+    }
+    
 }
