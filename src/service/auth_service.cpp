@@ -54,7 +54,12 @@ http::HttpResponse AuthService::registerUser(const http::HttpRequest &request)
         if (db_manager_.userExists(username))
         {
             LOG_WARN << "User already exists: " << username;
-            return http::HttpResponse::BadRequest("User already exists");
+            json error_response = {
+                {"success", false},
+                {"message", "User already exists"},
+                {"error", "Username is already taken"}
+            };
+            return http::HttpResponse::BadRequest().withJsonBody(error_response);
         }
         
         LOG_INFO << "User does not exist, proceeding with registration for: " << username;
@@ -68,7 +73,12 @@ http::HttpResponse AuthService::registerUser(const http::HttpRequest &request)
         if (!db_manager_.createUser(username, password_hash))
         {
             LOG_ERROR << "Failed to create user: " << username;
-            return http::HttpResponse::InternalError("Failed to create user");
+            json error_response = {
+                {"success", false},
+                {"message", "Failed to create user"},
+                {"error", "Database operation failed"}
+            };
+            return http::HttpResponse::InternalError().withJsonBody(error_response);
         }
         
         LOG_INFO << "User created successfully in database: " << username;
@@ -78,7 +88,12 @@ http::HttpResponse AuthService::registerUser(const http::HttpRequest &request)
         if (!user)
         {
             LOG_ERROR << "Failed to retrieve user after creation: " << username;
-            return http::HttpResponse::InternalError("Failed to retrieve user");
+            json error_response = {
+                {"success", false},
+                {"message", "Failed to retrieve user after creation"},
+                {"error", "Database operation failed"}
+            };
+            return http::HttpResponse::InternalError().withJsonBody(error_response);
         }
 
         // 生成 JWT 令牌
@@ -87,17 +102,32 @@ http::HttpResponse AuthService::registerUser(const http::HttpRequest &request)
     catch(const json::exception &e)
     {
         LOG_ERROR << "JSON parsing error: " << e.what();
-        return http::HttpResponse::BadRequest("Invalid JSON format");
+        json error_response = {
+            {"success", false},
+            {"message", "Invalid JSON format"},
+            {"error", e.what()}
+        };
+        return http::HttpResponse::BadRequest().withJsonBody(error_response);
     }
     catch(const std::exception &e)
     {
         LOG_ERROR << "Exception during user registration: " << e.what();
-        return http::HttpResponse::InternalError("Internal server error");
+        json error_response = {
+            {"success", false},
+            {"message", "Internal server error"},
+            {"error", e.what()}
+        };
+        return http::HttpResponse::InternalError().withJsonBody(error_response);
     }
     catch(...)
     {
         LOG_ERROR << "Unknown exception during user registration";
-        return http::HttpResponse::InternalError("Internal server error");
+        json error_response = {
+            {"success", false},
+            {"message", "Unknown error occurred"},
+            {"error", "Unknown exception"}
+        };
+        return http::HttpResponse::InternalError().withJsonBody(error_response);
     }
     
 }
@@ -116,7 +146,12 @@ http::HttpResponse AuthService::loginUser(const http::HttpRequest &request)
         if (!db_manager_.validateUser(username, hashPassword(password)))
         {
             LOG_WARN << "Invalid login attempt for user: " << username;
-            return http::HttpResponse::Unauthorized("Invalid username or password");
+            json error_response = {
+                {"success", false},
+                {"message", "Invalid username or password"},
+                {"error", "Authentication failed"}
+            };
+            return http::HttpResponse::Unauthorized().withJsonBody(error_response);
         }
 
         //获取用户信息
@@ -124,7 +159,12 @@ http::HttpResponse AuthService::loginUser(const http::HttpRequest &request)
         if (!user)
         {
             LOG_ERROR << "Failed to retrieve user during login: " << username;
-            return http::HttpResponse::InternalError("Failed to retrieve user");
+            json error_response = {
+                {"success", false},
+                {"message", "Failed to retrieve user"},
+                {"error", "Database operation failed"}
+            };
+            return http::HttpResponse::InternalError().withJsonBody(error_response);
         }
 
         //更新用户最后活跃时间
@@ -136,18 +176,33 @@ http::HttpResponse AuthService::loginUser(const http::HttpRequest &request)
     catch(const json::exception &e)
     {
         LOG_ERROR << "JSON parsing error: " << e.what();
-        return http::HttpResponse::BadRequest("Invalid JSON format");
+        json error_response = {
+            {"success", false},
+            {"message", "Invalid JSON format"},
+            {"error", e.what()}
+        };
+        return http::HttpResponse::BadRequest().withJsonBody(error_response);
     }
     catch(const std::exception &e)
     {
         LOG_ERROR << "Exception during user login: " << e.what();
-        return http::HttpResponse::InternalError("Internal server error");
+        json error_response = {
+            {"success", false},
+            {"message", "Internal server error"},
+            {"error", e.what()}
+        };
+        return http::HttpResponse::InternalError().withJsonBody(error_response);
     
     }
     catch(...)
     {
         LOG_ERROR << "Unknown exception during user login";
-        return http::HttpResponse::InternalError("Internal server error");
+        json error_response = {
+            {"success", false},
+            {"message", "Unknown error occurred"},
+            {"error", "Unknown exception"}
+        };
+        return http::HttpResponse::InternalError().withJsonBody(error_response);
     }
     
 }
@@ -159,7 +214,12 @@ http::HttpResponse AuthService::createAndSignToken(const User &user)
     if(!secret)
     {
         LOG_ERROR << "JWT_SECRET environment variable not set";
-        return http::HttpResponse::InternalError("Server configuration error.");
+        json error_response = {
+            {"success", false},
+            {"message", "Server configuration error"},
+            {"error", "JWT secret not configured"}
+        };
+        return http::HttpResponse::InternalError().withJsonBody(error_response);
     }
     std::string secret_key(secret);// 将 C 风格字符串转换为 std::string
     //创建JWT令牌
@@ -174,9 +234,15 @@ http::HttpResponse AuthService::createAndSignToken(const User &user)
         .sign(jwt::algorithm::hs256{secret_key});//使用哈希算法HS256和密钥进行签名
     
     //构造HTTP响应
-    json response_json;
-    response_json["token"] = token; // 将生成的JWT令牌放入响应
-    response_json["message"] = "Authentication successful"; // 添加消息
+    json response_json = {
+        {"success", true},
+        {"message", "Authentication successful"},
+        {"data", {
+            {"token", token},
+            {"user_id", user.getId()},
+            {"username", user.getUsername()}
+        }}
+    };
     return http::HttpResponse::Ok().withJsonBody(response_json); // 返回200 OK响应，包含JSON格式的令牌和消息
 }
 
