@@ -18,12 +18,21 @@ set(CMAKE_CXX_FLAGS_DEBUG "${CMAKE_CXX_FLAGS_DEBUG} -g -O0")
 find_package(Threads REQUIRED)
 # 查找并链接SQLite3数据库库
 find_package(SQLite3 REQUIRED)
+# 查找并链接OpenSSL库（用于JWT签名）
+find_package(OpenSSL REQUIRED)
+
+# 查找并链接Google Test
+find_package(GTest REQUIRED)
 
 # 设置头文件搜索路径
 include_directories(
     ${CMAKE_SOURCE_DIR}/src        # 项目源码目录
     ${CMAKE_SOURCE_DIR}/third_party # 第三方库目录
+    ${CMAKE_SOURCE_DIR}/third_party/jwt-cpp/include # jwt-cpp头文件目录
+    ${CMAKE_SOURCE_DIR}/third_party/websocketpp # websocketpp头文件目录
+    ${CMAKE_SOURCE_DIR}/third_party/nlohmann/single_include # nlohmann/json头文件目录
     ${SQLite3_INCLUDE_DIRS}        # SQLite3头文件目录
+    ${OPENSSL_INCLUDE_DIR}         # OpenSSL头文件目录
 )
 
 # 设置安装路径为构建目录
@@ -35,7 +44,7 @@ add_subdirectory(src)
 # 添加测试目录到构建系统
 add_subdirectory(tests)
 
-# 添加例子目录到构建系统
-add_subdirectory(examples)
+# 添加例子目录到构建系统 (暂时注释掉，因为缺少websocket相关文件)
+# add_subdirectory(examples)
 
 
