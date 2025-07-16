@@ -19,8 +19,50 @@ namespace http
     HttpServer::HttpServer(int port, size_t thread_count)
         : port_(port), running_(false), thread_pool_(thread_count)
     {
-        // (构造函数中的socket, setsockopt, bind, listen等底层代码与您原来的一样，保持不变)
-        // ...
+        static_dir_ = "./static"; // 设置静态文件目录
+
+        // 忽略SIGPIPE信号，避免写入已关闭的套接字导致程序终止
+        signal(SIGPIPE, SIG_IGN);
+
+        // 创建套接字
+        server_fd_ = socket(AF_INET, SOCK_STREAM, 0);
+        if (server_fd_ < 0)
+        {
+            LOG_ERROR << "Failed to create socket: " << strerror(errno);
+            throw std::runtime_error("Failed to create socket");
+        }
+
+        // 设置套接字选项
+        int opt = 1;
+        // 允许服务器在关闭后立即重启，即使之前的连接还处于TIME_WAIT状态，否则会绑定失败
+        if (setsockopt(server_fd_, SOL_SOCKET, SO_REUSEADDR, &opt, sizeof(opt)) < 0)
+        {
+            LOG_ERROR << "Failed to set socket options: " << strerror(errno);
+            close(server_fd_);
+            throw std::runtime_error("Failed to set socket options");
+        }
+
+        // 绑定套接字到指定端口
+        struct sockaddr_in server_addr;
+        std::memset(&server_addr, 0, sizeof(server_addr));
+        server_addr.sin_family = AF_INET;         // IPv4
+        server_addr.sin_addr.s_addr = INADDR_ANY; // 绑定到所有可用地址
+        server_addr.sin_port = htons(port_);      // 转换端口号为网络字节序
+        if (bind(server_fd_, (struct sockaddr *)&server_addr, sizeof(server_addr)) < 0)
+        {
+            LOG_ERROR << "Failed to bind socket: " << strerror(errno);
+            close(server_fd_);
+            throw std::runtime_error("Failed to bind socket");
+        }
+
+        // 开始监听
+        // SOMAXCONN 是一个宏定义，表示通过 listen 函数可指定的最大队列长度，其值为 4096。
+        if (listen(server_fd_, SOMAXCONN) < 0)
+        {
+            LOG_ERROR << "Failed to listen on socket: " << strerror(errno);
+            close(server_fd_);
+            throw std::runtime_error("Failed to listen on socket");
+        }
     }
 
     HttpServer::~HttpServer()
@@ -47,14 +89,52 @@ namespace http
 
     void HttpServer::run()
     {
-        // (run函数中的accept循环与您原来的一样，保持不变)
-        // ...
+        running_ = true;
+        LOG_INFO << "HTTP server is running on port " << port_;
+
+        while (running_)
+        {
+            sockaddr_in client_addr{};
+            socklen_t client_addr_len = sizeof(client_addr);
+            // 接受客户端连接
+            int client_fd = accept(server_fd_, (struct sockaddr *)&client_addr, &client_addr_len);
+            if (client_fd < 0)
+            {
+                if (errno == EINTR || !running_)
+                {
+                    // 被中断或服务器停止
+                    break;
+                }
+                LOG_ERROR << "Failed to accept client connection: " << strerror(errno);
+                continue; // 继续等待下一个连接
+            }
+
+            // 设置客户端套接字超时
+            struct timeval timeout;
+            timeout.tv_sec = 30; // 30秒超时
+            timeout.tv_usec = 0;
+            setsockopt(client_fd, SOL_SOCKET, SO_RCVTIMEO, &timeout, sizeof(timeout));
+            setsockopt(client_fd, SOL_SOCKET, SO_SNDTIMEO, &timeout, sizeof(timeout));
+
+            LOG_INFO << "Accepted connection from " << inet_ntoa(client_addr.sin_addr)
+                     << ":" << ntohs(client_addr.sin_port) << " (fd: " << client_fd << ")";
+            thread_pool_.enqueue([this, client_fd]()
+                                 {
+                handleClient(client_fd); // 处理客户端连接
+                return 0; });
+        }
     }
 
     void HttpServer::stop()
     {
-        // (stop函数的实现与您原来的一样，保持不变)
-        // ...
+        running_ = false;
+        if (server_fd_ != -1)
+        {
+            // 关闭服务器套接字以中断accept()调用
+            shutdown(server_fd_, SHUT_RDWR);
+            close(server_fd_);
+            server_fd_ = -1;
+        }
     }
 
     // 核心客户端处理逻辑
@@ -111,8 +191,8 @@ namespace http
     // [新增] 路由与中间件处理
     HttpResponse HttpServer::routeRequest(const HttpRequest &request)
     {
-        //遍历注册的所有路由
-        for(const auto& route : routes_)
+        // 遍历注册的所有路由
+        for (const auto &route : routes_)
         {
             // 检查请求方法和路径是否匹配
             if (route.method == request.getMethod() && route.path == request.getPath())
@@ -130,12 +210,12 @@ namespace http
                 }
             }
         }
-        //如果没有API路由匹配，尝试作为静态文件请求处理
-        if(request.getMethod() == "GET"&&!static_dir_.empty())
+        // 如果没有API路由匹配，尝试作为静态文件请求处理
+        if (request.getMethod() == "GET" && !static_dir_.empty())
         {
             return serveStaticFile(request.getPath());
         }
-        
+
         // 如果没有匹配的路由和静态文件，返回404
         return HttpResponse::NotFound("Endpoint not found");
     }
