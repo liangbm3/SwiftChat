@@ -34,7 +34,9 @@ public:
     bool deleteRoom(const std::string &room_id);
     bool roomExists(const std::string &room_id);
     std::vector<std::string> getRooms();
+    std::vector<nlohmann::json> getAllRooms();
     std::optional<nlohmann::json> getRoomById(const std::string &room_id) const;
+    std::optional<std::string> getRoomIdByName(const std::string &room_name) const;
     std::string generateRoomId();
     bool updateRoom(const std::string &room_id, const std::string &name, const std::string &description);
     bool isRoomCreator(const std::string &room_id, const std::string &user_id);

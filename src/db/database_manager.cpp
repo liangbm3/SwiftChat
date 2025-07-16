@@ -97,6 +97,11 @@ std::optional<nlohmann::json> DatabaseManager::getRoomById(const std::string &ro
     return room_repo_ ? room_repo_->getRoomById(room_id) : std::nullopt;
 }
 
+std::optional<std::string> DatabaseManager::getRoomIdByName(const std::string &room_name) const
+{
+    return room_repo_ ? room_repo_->getRoomIdByName(room_name) : std::nullopt;
+}
+
 std::string DatabaseManager::generateRoomId()
 {
     return room_repo_ ? room_repo_->generateRoomId() : "";
@@ -139,4 +144,9 @@ std::vector<nlohmann::json> DatabaseManager::getMessages(const std::string &room
                                                           int64_t before_timestamp)
 {
     return message_repo_ ? message_repo_->getMessages(room_id, limit, before_timestamp) : std::vector<nlohmann::json>();
+}
+
+std::vector<nlohmann::json> DatabaseManager::getAllRooms()
+{
+    return room_repo_ ? room_repo_->getAllRooms() : std::vector<nlohmann::json>();
 }
