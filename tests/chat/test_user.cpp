@@ -1,230 +1,112 @@
-#include <iostream>
-#include <cassert>
-#include <stdexcept>
-#include "../src/chat/user.hpp"
+#include <gtest/gtest.h>
+#include "../../src/chat/user.hpp"
 
-// 测试辅助函数：打印测试结果
-void printTestResult(const std::string& testName, bool passed) {
-    std::cout << "[" << (passed ? "PASS" : "FAIL") << "] " << testName << std::endl;
+// 测试User对象的基本功能
+TEST(UserTest, BasicFunctionality) {
+    User user("123", "testuser", "testpass", true, 1234567890);
+    
+    EXPECT_EQ(user.getId(), "123");
+    EXPECT_EQ(user.getUsername(), "testuser");
+    EXPECT_EQ(user.getPassword(), "testpass");
+    EXPECT_TRUE(user.isOnline());
+    EXPECT_EQ(user.getLastActiveTime(), 1234567890);
+}
+
+// 测试User的setter方法
+TEST(UserTest, SetterMethods) {
+    User user;
+    
+    user.setId("456");
+    user.setUsername("newuser");
+    user.setPassword("newpass");
+    user.setOnline(true);
+    user.setLastActiveTime(9876543210);
+    
+    EXPECT_EQ(user.getId(), "456");
+    EXPECT_EQ(user.getUsername(), "newuser");
+    EXPECT_EQ(user.getPassword(), "newpass");
+    EXPECT_TRUE(user.isOnline());
+    EXPECT_EQ(user.getLastActiveTime(), 9876543210);
 }
 
 // 测试User对象转JSON
-void testUserToJson() {
-    std::cout << "\n=== 测试 User::toJson() ===" << std::endl;
+TEST(UserTest, ToJson) {
+    User user("789", "jsonuser", "jsonpass", false, 1111111111);
     
-    // 测试1：基本转换
-    {
-        User user;
-        user.username = "testuser";
-        user.password = "testpass";
-        user.is_online = true;
-        
-        json j = user.toJson();
-        
-        bool passed = (j["username"] == "testuser" && 
-                      j["password"] == "testpass" && 
-                      j["is_online"] == true);
-        printTestResult("基本JSON转换", passed);
-    }
+    json j = user.toJson();
     
-    // 测试2：空字符串处理
-    {
-        User user;
-        user.username = "";
-        user.password = "";
-        user.is_online = false;
-        
-        json j = user.toJson();
-        
-        bool passed = (j["username"] == "" && 
-                      j["password"] == "" && 
-                      j["is_online"] == false);
-        printTestResult("空字符串处理", passed);
-    }
-    
-    // 测试3：特殊字符处理
-    {
-        User user;
-        user.username = "user@example.com";
-        user.password = "pass!@#$%^&*()";
-        user.is_online = true;
-        
-        json j = user.toJson();
-        
-        bool passed = (j["username"] == "user@example.com" && 
-                      j["password"] == "pass!@#$%^&*()" && 
-                      j["is_online"] == true);
-        printTestResult("特殊字符处理", passed);
-    }
+    EXPECT_EQ(j["id"], "789");
+    EXPECT_EQ(j["username"], "jsonuser");
+    EXPECT_EQ(j["password"], "jsonpass");
+    EXPECT_EQ(j["is_online"], false);
+    EXPECT_EQ(j["last_active_time"], 1111111111);
 }
 
-// 测试JSON转User对象
-void testJsonToUser() {
-    std::cout << "\n=== 测试 User::fromJson() ===" << std::endl;
+// 测试从JSON创建User对象
+TEST(UserTest, FromJson) {
+    json j;
+    j["id"] = "999";
+    j["username"] = "fromjsonuser";
+    j["password"] = "fromjsonpass";
+    j["is_online"] = true;
+    j["last_active_time"] = 2222222222;
     
-    // 测试1：基本转换
-    {
-        json j = {
-            {"username", "testuser"},
-            {"password", "testpass"},
-            {"is_online", true}
-        };
-        
-        User user = User::fromJson(j);
-        
-        bool passed = (user.username == "testuser" && 
-                      user.password == "testpass" && 
-                      user.is_online == true);
-        printTestResult("基本JSON解析", passed);
-    }
+    User user = User::fromJson(j);
     
-    // 测试2：false值处理
-    {
-        json j = {
-            {"username", "offlineuser"},
-            {"password", "password123"},
-            {"is_online", false}
-        };
-        
-        User user = User::fromJson(j);
-        
-        bool passed = (user.username == "offlineuser" && 
-                      user.password == "password123" && 
-                      user.is_online == false);
-        printTestResult("离线用户解析", passed);
-    }
-    
-    // 测试3：缺少字段异常处理
-    {
-        json j = {
-            {"username", "incompleteuser"},
-            {"password", "password123"}
-            // 缺少 is_online 字段
-        };
-        
-        bool passed = false;
-        try {
-            User user = User::fromJson(j);
-        } catch (const std::exception& e) {
-            passed = true; // 期望抛出异常
-        }
-        printTestResult("缺少字段异常处理", passed);
-    }
-    
-    // 测试4：错误类型异常处理
-    {
-        json j = {
-            {"username", "typeuser"},
-            {"password", "password123"},
-            {"is_online", "not_a_boolean"} // 错误类型
-        };
-        
-        bool passed = false;
-        try {
-            User user = User::fromJson(j);
-        } catch (const std::exception& e) {
-            passed = true; // 期望抛出异常
-        }
-        printTestResult("错误类型异常处理", passed);
-    }
+    EXPECT_EQ(user.getId(), "999");
+    EXPECT_EQ(user.getUsername(), "fromjsonuser");
+    EXPECT_EQ(user.getPassword(), "fromjsonpass");
+    EXPECT_TRUE(user.isOnline());
+    EXPECT_EQ(user.getLastActiveTime(), 2222222222);
 }
 
-// 测试往返转换（序列化后反序列化）
-void testRoundTrip() {
-    std::cout << "\n=== 测试往返转换 ===" << std::endl;
+// 测试JSON往返转换
+TEST(UserTest, JsonRoundTrip) {
+    User originalUser("round123", "roundtripuser", "complexpass!@#", true, 3333333333);
     
-    // 测试1：往返转换保持数据一致性
-    {
-        User originalUser;
-        originalUser.username = "roundtripuser";
-        originalUser.password = "complexpass!@#";
-        originalUser.is_online = true;
-        
-        // 转换为JSON再转回User
-        json j = originalUser.toJson();
-        User reconstructedUser = User::fromJson(j);
-        
-        bool passed = (originalUser.username == reconstructedUser.username && 
-                      originalUser.password == reconstructedUser.password && 
-                      originalUser.is_online == reconstructedUser.is_online);
-        printTestResult("往返转换数据一致性", passed);
-    }
+    // 转换为JSON再转回User
+    json j = originalUser.toJson();
+    User reconstructedUser = User::fromJson(j);
     
-    // 测试2：多次往返转换
-    {
-        User user;
-        user.username = "multiround";
-        user.password = "testpass";
-        user.is_online = false;
-        
-        // 进行多次往返转换
-        for (int i = 0; i < 5; i++) {
-            json j = user.toJson();
-            user = User::fromJson(j);
-        }
-        
-        bool passed = (user.username == "multiround" && 
-                      user.password == "testpass" && 
-                      user.is_online == false);
-        printTestResult("多次往返转换", passed);
-    }
+    // 验证所有字段都正确
+    EXPECT_EQ(originalUser.getId(), reconstructedUser.getId());
+    EXPECT_EQ(originalUser.getUsername(), reconstructedUser.getUsername());
+    EXPECT_EQ(originalUser.getPassword(), reconstructedUser.getPassword());
+    EXPECT_EQ(originalUser.isOnline(), reconstructedUser.isOnline());
+    EXPECT_EQ(originalUser.getLastActiveTime(), reconstructedUser.getLastActiveTime());
 }
 
 // 测试边界情况
-void testEdgeCases() {
-    std::cout << "\n=== 测试边界情况 ===" << std::endl;
+TEST(UserTest, EdgeCases) {
+    // 测试空字符串
+    User emptyUser("", "", "", false, 0);
+    json j = emptyUser.toJson();
+    User reconstructed = User::fromJson(j);
     
-    // 测试1：超长字符串
-    {
-        User user;
-        user.username = std::string(1000, 'a'); // 1000个'a'
-        user.password = std::string(1000, 'b'); // 1000个'b'
-        user.is_online = true;
-        
-        json j = user.toJson();
-        User reconstructedUser = User::fromJson(j);
-        
-        bool passed = (user.username == reconstructedUser.username && 
-                      user.password == reconstructedUser.password && 
-                      user.is_online == reconstructedUser.is_online);
-        printTestResult("超长字符串处理", passed);
-    }
+    EXPECT_EQ(reconstructed.getId(), "");
+    EXPECT_EQ(reconstructed.getUsername(), "");
+    EXPECT_EQ(reconstructed.getPassword(), "");
+    EXPECT_FALSE(reconstructed.isOnline());
+    EXPECT_EQ(reconstructed.getLastActiveTime(), 0);
     
-    // 测试2：Unicode字符
-    {
-        User user;
-        user.username = "用户名测试";
-        user.password = "密码测试🔐";
-        user.is_online = true;
-        
-        json j = user.toJson();
-        User reconstructedUser = User::fromJson(j);
-        
-        bool passed = (user.username == reconstructedUser.username && 
-                      user.password == reconstructedUser.password && 
-                      user.is_online == reconstructedUser.is_online);
-        printTestResult("Unicode字符处理", passed);
-    }
+    // 测试长字符串
+    std::string longString(1000, 'a');
+    User longUser("longid", longString, longString, true, 4444444444);
+    json longJson = longUser.toJson();
+    User longReconstructed = User::fromJson(longJson);
+    
+    EXPECT_EQ(longReconstructed.getUsername(), longString);
+    EXPECT_EQ(longReconstructed.getPassword(), longString);
 }
 
-int main() {
-    std::cout << "开始运行 User 类测试用例..." << std::endl;
-    std::cout << "========================================" << std::endl;
+// 测试特殊字符
+TEST(UserTest, SpecialCharacters) {
+    User specialUser("special", "用户名测试", "密码测试🔐", true, 5555555555);
     
-    try {
-        testUserToJson();
-        testJsonToUser();
-        testRoundTrip();
-        testEdgeCases();
-        
-        std::cout << "\n========================================" << std::endl;
-        std::cout << "所有测试已完成！" << std::endl;
-        std::cout << "注意：请检查上面的测试结果，确保所有测试都通过。" << std::endl;
-        
-    } catch (const std::exception& e) {
-        std::cerr << "测试过程中发生异常: " << e.what() << std::endl;
-        return 1;
-    }
+    json j = specialUser.toJson();
+    User reconstructed = User::fromJson(j);
     
-    return 0;
+    EXPECT_EQ(reconstructed.getUsername(), "用户名测试");
+    EXPECT_EQ(reconstructed.getPassword(), "密码测试🔐");
+    EXPECT_TRUE(reconstructed.isOnline());
 }
