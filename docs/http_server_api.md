@@ -1,154 +1,199 @@
-# HTTP 响应类 (HttpResponse) API 文档
+# HTTP 服务器 (HttpServer) API 文档
 
 ## 1\. 概述 (Overview)
 
-`http::HttpResponse` 类是一个用于轻松构建和序列化HTTP响应的强大工具。它遵循**流式接口 (Fluent Interface)** 和**工厂模式 (Factory Pattern)**，旨在让创建HTTP响应的过程既简单、清晰，又富有表现力。
+`http::HttpServer` 是整个Web服务的核心引擎。它负责处理底层的网络通信（TCP监听、接受连接），并内置了一个强大而灵活的**多线程请求处理**、**路由分发**和**中间件**系统。
 
-### 核心设计理念
+通过使用该类，您可以将业务逻辑与复杂的网络编程解耦，专注于实现具体的API功能和静态文件服务。
 
-  * **构建器模式 (Builder Pattern)**: `HttpResponse` 对象被设计为构建器。您可以从一个默认的响应开始，或者使用一个静态工厂方法（如 `Ok()`, `NotFound()`）创建一个特定类型的响应，然后通过链式调用 `with...` 方法来逐步添加或修改头部和响应体。
-  * **封装与安全**: 响应对象的状态（状态码、头部、响应体）被封装为私有成员。只能通过提供的公共方法进行修改，这保证了对象状态的有效性（例如，`Content-Length` 会被自动管理）。
-  * **便利性**: 为常见的HTTP响应（如404, 500等）提供了静态工厂方法，并内置了对 `nlohmann::json` 的无缝支持。
+### 核心概念
+
+#### a) 请求处理器 (RequestHandler)
+
+这是API路由的最终目的地。它是一个函数（或lambda表达式），接收一个`HttpRequest`对象，并必须返回一个`HttpResponse`对象。
+
+```cpp
+using RequestHandler = std::function<HttpResponse(const HttpRequest&)>;
+```
+
+**职责**: 实现具体的业务逻辑，例如从数据库查询用户信息、创建新的聊天室等。
+
+#### b) 中间件 (Middleware)
+
+中间件是一种强大的设计模式，它允许您在请求到达最终的`RequestHandler`之前，或者在响应返回给客户端之前，对请求和响应进行一系列的“加工处理”。
+
+```cpp
+using Middleware = std::function<HttpResponse(const HttpRequest&, const RequestHandler&)>;
+```
+
+**职责**: 处理一些通用的、与具体业务无关的横切关注点，例如：
+
+  * 记录每个请求的日志。
+  * 验证用户的认证信息（如JWT Token）。
+  * 为所有响应添加CORS（跨域资源共享）头。
+  * 捕获异常并统一格式化错误响应。
+
+中间件形成一个**调用链**。每个中间件都可以决定是“放行”请求到下一个中间件（通过调用`next`函数），还是直接“短路”并返回一个响应（例如，认证失败时返回`401`）。
 
 ## 2\. API 详解
 
-### 2.1 创建响应对象 (Creating Response Objects)
-
-创建响应的第一步通常是调用默认构造函数或一个静态工厂方法。
+### 2.1 初始化与配置
 
 -----
 
-#### `HttpResponse()`
+#### `HttpServer(int port, size_t thread_count = std::thread::hardware_concurrency())`
 
-  * **描述**: 默认构造函数。创建一个基础的、状态为 `200 OK` 的空响应。它会包含 `Server`, `Date`, `Connection` 等默认头部。
-  * **示例**: `http::HttpResponse resp;`
-
------
-
-#### `static HttpResponse Ok(const std::string& body = "OK")`
-
-  * **描述**: 创建一个 `200 OK` 响应。
-  * **参数**: `body` (`const std::string&`, 可选): 响应体内容，默认为 `"OK"`。
-  * **示例**: `auto resp = http::HttpResponse::Ok("操作成功");`
-
------
-
-#### `static HttpResponse Created(const std::string& body = "Created")`
-
-  * **描述**: 创建一个 `201 Created` 响应。通常用于资源创建成功的场景。响应体会被自动包装成JSON格式 `{"message": "..."}`。
-  * **示例**: `auto resp = http::HttpResponse::Created("用户创建成功");`
-
------
-
-#### `static HttpResponse NoContent()`
-
-  * **描述**: 创建一个 `204 No Content` 响应。根据HTTP规范，此响应**不包含**任何响应体和 `Content-Length` 头部。
-  * **示例**: `auto resp = http::HttpResponse::NoContent();`
-
------
-
-#### `static HttpResponse BadRequest(const std::string& error_message = "Bad Request")`
-
-  * **描述**: 创建一个 `400 Bad Request` 响应。响应体会被自动包装成JSON格式 `{"error": "..."}`。
-  * **示例**: `auto resp = http::HttpResponse::BadRequest("请求参数无效");`
-
------
-
-*... 其他静态工厂方法 (`Unauthorized`, `Forbidden`, `NotFound`, `InternalError` 等) 的用法与 `BadRequest` 类似。*
-
------
-
-### 2.2 构建与定制 (流式接口)
-
-这些方法返回 `HttpResponse&`，允许进行方法链式调用。
-
------
-
-#### `HttpResponse& withStatus(int code)`
-
-  * **描述**: 设置或修改响应的HTTP状态码。
-  * **参数**: `code` (`int`): 一个标准的HTTP状态码，如 `200`, `404`。
-  * **返回值**: `HttpResponse&` - 对象自身的引用，用于链式调用。
-  * **示例**: `resp.withStatus(202);`
-
------
-
-#### `HttpResponse& withHeader(const std::string& key, const std::string& value)`
-
-  * **描述**: 添加或覆盖一个HTTP响应头。
+  * **描述**: 构造函数。初始化服务器，设置监听端口和线程池中的工作线程数量。在这一步，服务器会完成`socket`, `bind`, `listen`等所有网络准备工作。如果失败，会抛出`std::runtime_error`。
   * **参数**:
-      * `key` (`const std::string&`): 头部的名称，例如 `"Content-Type"`。
-      * `value` (`const std::string&`): 头部的值。
-  * **返回值**: `HttpResponse&` - 对象自身的引用。
-  * **示例**: `resp.withHeader("X-Custom-Info", "some-value");`
+      * `port` (`int`): 服务器要监听的TCP端口号。
+      * `thread_count` (`size_t`, 可选): 线程池的工作线程数，默认为硬件支持的并发线程数。
 
 -----
 
-#### `HttpResponse& withBody(const std::string& body_content, const std::string& content_type = "text/plain")`
+#### `void setStaticDirectory(const std::string& dir)`
 
-  * **描述**: 设置响应体为纯文本或二进制内容。
+  * **描述**: 设置用于提供静态文件服务的根目录。
   * **参数**:
-      * `body_content` (`const std::string&`): 响应体的内容。
-      * `content_type` (`const std::string&`, 可选): 该内容的MIME类型，默认为 `"text/plain"`。
-  * **返回值**: `HttpResponse&` - 对象自身的引用。
-  * **示例**: `resp.withBody("<html>...</html>", "text/html");`
+      * `dir` (`const std::string&`): 本地文件系统中的路径，例如 `"./public"`。
 
 -----
 
-#### `HttpResponse& withJsonBody(const nlohmann::json& json_body)`
-
-  * **描述**: 将一个 `nlohmann::json` 对象设置为响应体。该方法会自动将JSON对象序列化为字符串，并设置 `Content-Type` 为 `application/json; charset=utf-8`。
-  * **参数**: `json_body` (`const nlohmann::json&`): 要发送的JSON对象。
-  * **返回值**: `HttpResponse&` - 对象自身的引用。
+### 2.2 路由与中间件注册
 
 -----
 
-### 2.3 序列化 (Serialization)
+#### `void addHandler(const std::string& path, const std::string& method, RequestHandler handler)`
+
+  * **描述**: 为一个特定的\*\*路径（Path）**和**HTTP方法（Method）\*\*组合注册一个请求处理器。
+  * **参数**:
+      * `path` (`const std::string&`): API的路径，例如 `"/api/users"`。**需要精确匹配**。
+      * `method` (`const std::string&`): HTTP方法，例如 `"GET"`, `"POST"`。
+      * `handler` (`RequestHandler`): 符合`RequestHandler`签名的函数或lambda表达式。
 
 -----
 
-#### `std::string toString() const`
+#### `void addMiddleware(Middleware middleware)`
 
-  * **描述**: 将构建好的 `HttpResponse` 对象序列化为一个完整的、符合HTTP规范的字符串。这是构建响应的最后一步，得到的字符串可以直接发送给客户端。该方法会自动处理 `Content-Length` 和特殊状态码（如`204`）的响应体。
-  * **返回值**: `std::string` - 可直接发送的HTTP响应报文。
+  * **描述**: 添加一个中间件到处理链中。中间件将按照**添加的顺序**依次执行。
+  * **参数**:
+      * `middleware` (`Middleware`): 符合`Middleware`签名的函数或lambda表达式。
+
+-----
+
+### 2.3 运行与停止
+
+-----
+
+#### `void run()`
+
+  * **描述**: 启动服务器的主事件循环。这是一个**阻塞调用**，它会持续监听和接受新的客户端连接，直到`stop()`被调用。通常这是`main`函数的最后一步。
+
+-----
+
+#### `void stop()`
+
+  * **描述**: 优雅地停止服务器。它会设置一个标志位来终止事件循环，并关闭服务器的监听套接字以中断阻塞的`accept()`调用。此方法是线程安全的。
 
 -----
 
 ### 3\. 综合使用示例
 
+这是一个模拟的 `main.cpp`，展示了如何配置和运行一个包含API、中间件和静态文件服务的完整服务器。
+
 ```cpp
-#include "http/http_response.hpp"
-#include <iostream>
+#include "http/http_server.hpp"
+#include "db/database_manager.hpp" // 假设这是您的数据库管理器
+#include "utils/logger.hpp"      // 假设这是您的日志库
 
-// 示例1: 创建一个简单的 404 Not Found 响应
-void sendNotFound() {
-    auto response = http::HttpResponse::NotFound("您请求的资源不存在。");
-    std::cout << response.toString() << std::endl;
+// --- 业务逻辑处理器 ---
+// (在实际项目中，这些处理器可能会在不同的文件中)
+
+HttpResponse handleUserRegister(const http::HttpRequest& req, DatabaseManager& db) {
+    try {
+        auto json_body = nlohmann::json::parse(req.getBody());
+        std::string username = json_body.at("username");
+        std::string password = json_body.at("password");
+
+        // 密码应该在客户端加密，服务器端哈希后存储
+        std::string password_hash = "hashed_" + password; // 简化处理
+
+        if (db.createUser(username, password_hash)) {
+            return http::HttpResponse::Created("User created successfully.");
+        } else {
+            return http::HttpResponse::BadRequest("Username already exists.");
+        }
+    } catch (const std::exception& e) {
+        return http::HttpResponse::BadRequest(e.what());
+    }
 }
 
-// 示例2: 创建一个成功的JSON数据响应
-void sendUserData() {
-    nlohmann::json user_data = {
-        {"user_id", "user_123"},
-        {"username", "alice"},
-        {"email", "alice@example.com"}
-    };
-    
-    // 从一个200 OK响应开始，然后用JSON设置body
-    auto response = http::HttpResponse::Ok().withJsonBody(user_data);
-    std::cout << response.toString() << std::endl;
+HttpResponse handleGetUsers(const http::HttpRequest& req, DatabaseManager& db) {
+    auto users = db.getAllUsers();
+    nlohmann::json json_response;
+    for (const auto& user : users) {
+        json_response.push_back({
+            {"id", user.getId()},
+            {"username", user.getUsername()},
+            {"is_online", user.isOnline()}
+        });
+    }
+    return http::HttpResponse::Ok().withJsonBody(json_response);
 }
 
-// 示例3: 使用方法链创建一个自定义的 201 Created 响应
-void sendCreationResponse() {
-    nlohmann::json response_body = { {"message", "资源创建成功"}, {"id", 5} };
 
-    http::HttpResponse response;
-    response.withStatus(201)
-            .withHeader("Location", "/api/items/5")
-            .withHeader("X-Custom-Trace-ID", "trace-xyz")
-            .withJsonBody(response_body);
+int main() {
+    try {
+        // 1. 初始化依赖项
+        DatabaseManager db("swiftchat.db");
 
-    std::cout << response.toString() << std::endl;
+        // 2. 创建并配置服务器
+        http::HttpServer server(8080);
+        server.setStaticDirectory("./public"); // 设置静态文件目录
+
+        // 3. 添加中间件 (按执行顺序列出)
+        // 日志中间件
+        server.addMiddleware([](const http::HttpRequest& req, const http::HttpServer::RequestHandler& next) {
+            LOG_INFO << ">> Request Start: " << req.getMethod() << " " << req.getPath();
+            auto response = next(req); // 调用下一个中间件或最终处理器
+            LOG_INFO << "<< Request End";
+            return response;
+        });
+
+        // 认证中间件 (示例)
+        server.addMiddleware([&](const http::HttpRequest& req, const http::HttpServer::RequestHandler& next) {
+            // 公开路径，无需认证
+            if (req.getPath() == "/api/users/register") {
+                return next(req);
+            }
+            
+            // 简单检查认证头
+            if (!req.hasHeader("Authorization")) {
+                return http::HttpResponse::Unauthorized("Authorization header is missing.");
+            }
+            // ... 此处应有真正的Token验证逻辑 ...
+            
+            // 验证通过，放行
+            return next(req);
+        });
+
+        // 4. 注册API路由
+        // 使用 lambda 捕获 db 引用，将其注入到处理器中
+        server.addHandler("/api/users/register", "POST", [&](const http::HttpRequest& req) {
+            return handleUserRegister(req, db);
+        });
+
+        server.addHandler("/api/users", "GET", [&](const http::HttpRequest& req) {
+            return handleGetUsers(req, db);
+        });
+
+        // 5. 启动服务器
+        server.run();
+
+    } catch (const std::exception& e) {
+        LOG_ERROR << "Server startup failed: " << e.what();
+        return 1;
+    }
+
+    return 0;
 }
 ```
