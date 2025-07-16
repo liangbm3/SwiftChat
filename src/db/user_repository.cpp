@@ -9,10 +9,17 @@ UserRepository::UserRepository(DatabaseConnection* db_conn) : db_conn_(db_conn) 
 
 bool UserRepository::createUser(const std::string &username, const std::string &password_hash)
 {
-    if (!db_conn_->isConnected()) return false;//如果数据库未连接，直接返回失败
+    LOG_INFO << "Attempting to create user: " << username;
+    
+    if (!db_conn_->isConnected()) 
+    {
+        LOG_ERROR << "Database not connected when creating user: " << username;
+        return false;//如果数据库未连接，直接返回失败
+    }
     
     std::lock_guard<std::recursive_mutex> lock(db_conn_->getMutex());//获取连接锁
     std::string user_id = generateUserId();//生成用户ID
+    LOG_INFO << "Generated user ID: " << user_id << " for username: " << username;
 
     const char *sql = "INSERT INTO users (id, username, password_hash, created_at) VALUES(?, ?, ?, ?);";
     sqlite3_stmt *stmt;
@@ -28,7 +35,21 @@ bool UserRepository::createUser(const std::string &username, const std::string &
     sqlite3_bind_text(stmt, 3, password_hash.c_str(), -1, SQLITE_STATIC);
     sqlite3_bind_int64(stmt, 4, std::chrono::system_clock::now().time_since_epoch().count());
 
-    bool success = (sqlite3_step(stmt) == SQLITE_DONE);
+    LOG_INFO << "Executing INSERT statement for user: " << username;
+    int step_result = sqlite3_step(stmt);
+    bool success = (step_result == SQLITE_DONE);
+    
+    if (!success)
+    {
+        LOG_ERROR << "Failed to execute INSERT for user: " << username 
+                  << ", SQLite error: " << sqlite3_errmsg(db_conn_->getDb())
+                  << ", Step result: " << step_result;
+    }
+    else
+    {
+        LOG_INFO << "Successfully created user: " << username;
+    }
+    
     sqlite3_finalize(stmt);
     return success;
 }
