@@ -2,6 +2,7 @@
 #include "utils/logger.hpp"
 #include <jwt-cpp/jwt.h>
 #include <nlohmann/json.hpp>
+#include <ctime>
 
 using json = nlohmann::json;
 
@@ -98,6 +99,14 @@ void WebSocketServer::on_close(connection_hdl hdl)
     {
         std::string user_id = it->second;
         LOG_INFO << "WebSocket connection closed for user: " << user_id;
+        
+        // 从用户当前房间中移除
+        auto room_it = user_current_room_.find(user_id);
+        if (room_it != user_current_room_.end())
+        {
+            leave_room(user_id, room_it->second);
+        }
+        
         // 从用户连接映射中移除
         user_connections_.erase(user_id);
         connection_users_.erase(it);
@@ -127,10 +136,16 @@ void WebSocketServer::on_message(connection_hdl hdl, websocket_server::message_p
                 std::string token = json_msg.at("token").get<std::string>();
 
                 // 验证JWT令牌
-                const char *secret_key_cstr = std::getenv("JWT_SECRET_KEY");
+                const char *secret_key_cstr = std::getenv("JWT_SECRET");
                 if (!secret_key_cstr)
                 {
-                    LOG_ERROR << "FATAL: JWT_SECRET_KEY not set for verification.";
+                    LOG_ERROR << "FATAL: JWT_SECRET not set for verification.";
+                    json error_response = {
+                        {"type", "auth_error"},
+                        {"message", "Server configuration error"}
+                    };
+                    server_.send(hdl, error_response.dump(), websocketpp::frame::opcode::text);
+                    server_.close(hdl, websocketpp::close::status::internal_endpoint_error, "Server configuration error");
                     return;
                 }
                 std::string secret_key(secret_key_cstr);
@@ -149,7 +164,9 @@ void WebSocketServer::on_message(connection_hdl hdl, websocket_server::message_p
                 LOG_INFO << "WebSocket connection authenticated for user: " << user_id;
                 json response = {
                     {"type", "auth_success"},
-                    {"message", "Authentication successful"}};
+                    {"message", "Authentication successful"},
+                    {"user_id", user_id}
+                };
                 server_.send(hdl, response.dump(), websocketpp::frame::opcode::text);
             }
             else
@@ -167,34 +184,263 @@ void WebSocketServer::on_message(connection_hdl hdl, websocket_server::message_p
         catch (const jwt::error::token_verification_exception &e)
         {
             LOG_ERROR << "JWT verification failed: " << e.what();
+            json error_response = {
+                {"type", "auth_error"},
+                {"message", "Invalid token"}
+            };
+            server_.send(hdl, error_response.dump(), websocketpp::frame::opcode::text);
             server_.close(hdl, websocketpp::close::status::policy_violation, "Invalid token");
         }
         catch (const std::exception &e)
         {
             LOG_ERROR << "WebSocket message handling error: " << e.what();
+            json error_response = {
+                {"type", "error"},
+                {"message", "Internal server error"}
+            };
+            server_.send(hdl, error_response.dump(), websocketpp::frame::opcode::text);
             server_.close(hdl, websocketpp::close::status::internal_endpoint_error, "Internal server error");
-        }
-    }
-}
-
-void WebSocketServer::send_to_user(const std::string &user_id, const std::string &message)
-{
-    std::lock_guard<std::mutex> lock(connection_mutex_);
-    auto it = user_connections_.find(user_id);
-    if (it != user_connections_.end())
-    {
-        try
-        {
-            server_.send(it->second, message, websocketpp::frame::opcode::text);
-            LOG_INFO << "Message sent to user: " << user_id;
-        }
-        catch (const std::exception &e)
-        {
-            LOG_ERROR << "Failed to send message to user " << user_id << ": " << e.what();
         }
     }
     else
     {
-        LOG_WARN << "User " << user_id << " not found in active connections";
+        // 处理已认证用户的消息
+        std::string user_id = it->second;
+        try
+        {
+            auto json_msg = json::parse(msg->get_payload());
+            handle_authenticated_message(hdl, user_id, json_msg);
+        }
+        catch (const json::exception &e)
+        {
+            LOG_ERROR << "JSON parsing error from user " << user_id << ": " << e.what();
+            send_error(hdl, "Invalid JSON format");
+        }
+        catch (const std::exception &e)
+        {
+            LOG_ERROR << "Message handling error from user " << user_id << ": " << e.what();
+            send_error(hdl, "Message processing error");
+        }
     }
+}
+
+void WebSocketServer::handle_authenticated_message(connection_hdl hdl, const std::string& user_id, const json& message)
+{
+    std::string msg_type = message.value("type", "");
+    
+    LOG_INFO << "Received message type '" << msg_type << "' from user: " << user_id;
+    
+    if (msg_type == "join_room")
+    {
+        handle_join_room(hdl, user_id, message);
+    }
+    else if (msg_type == "leave_room")
+    {
+        handle_leave_room(hdl, user_id, message);
+    }
+    else if (msg_type == "chat_message")
+    {
+        handle_chat_message(hdl, user_id, message);
+    }
+    else if (msg_type == "ping")
+    {
+        // 处理心跳消息
+        json pong_response = {
+            {"type", "pong"},
+            {"timestamp", std::time(nullptr)}
+        };
+        server_.send(hdl, pong_response.dump(), websocketpp::frame::opcode::text);
+    }
+    else
+    {
+        LOG_WARN << "Unknown message type '" << msg_type << "' from user: " << user_id;
+        send_error(hdl, "Unknown message type: " + msg_type);
+    }
+}
+
+void WebSocketServer::handle_join_room(connection_hdl hdl, const std::string& user_id, const json& message)
+{
+    try
+    {
+        std::string room_id = message.at("room_id").get<std::string>();
+        
+        // 如果用户已经在其他房间，先离开
+        auto current_room_it = user_current_room_.find(user_id);
+        if (current_room_it != user_current_room_.end())
+        {
+            leave_room(user_id, current_room_it->second);
+        }
+        
+        // 加入新房间
+        join_room(user_id, room_id);
+        
+        LOG_INFO << "User " << user_id << " joined room: " << room_id;
+        
+        // 发送成功响应给用户
+        json response = {
+            {"type", "room_joined"},
+            {"room_id", room_id},
+            {"message", "Successfully joined room"}
+        };
+        server_.send(hdl, response.dump(), websocketpp::frame::opcode::text);
+        
+        // 通知房间内其他用户
+        json notification = {
+            {"type", "user_joined"},
+            {"user_id", user_id},
+            {"room_id", room_id},
+            {"message", "User " + user_id + " joined the room"}
+        };
+        broadcast_to_room(room_id, notification.dump(), user_id); // 排除自己
+    }
+    catch (const json::exception& e)
+    {
+        LOG_ERROR << "Error joining room for user " << user_id << ": " << e.what();
+        send_error(hdl, "Missing required field: room_id");
+    }
+}
+
+void WebSocketServer::handle_leave_room(connection_hdl hdl, const std::string& user_id, const json& message)
+{
+    auto current_room_it = user_current_room_.find(user_id);
+    if (current_room_it == user_current_room_.end())
+    {
+        send_error(hdl, "You are not in any room");
+        return;
+    }
+    
+    std::string room_id = current_room_it->second;
+    leave_room(user_id, room_id);
+    
+    LOG_INFO << "User " << user_id << " left room: " << room_id;
+    
+    // 发送成功响应给用户
+    json response = {
+        {"type", "room_left"},
+        {"room_id", room_id},
+        {"message", "Successfully left room"}
+    };
+    server_.send(hdl, response.dump(), websocketpp::frame::opcode::text);
+    
+    // 通知房间内其他用户
+    json notification = {
+        {"type", "user_left"},
+        {"user_id", user_id},
+        {"room_id", room_id},
+        {"message", "User " + user_id + " left the room"}
+    };
+    broadcast_to_room(room_id, notification.dump());
+}
+
+void WebSocketServer::handle_chat_message(connection_hdl hdl, const std::string& user_id, const json& message)
+{
+    try
+    {
+        std::string content = message.at("content").get<std::string>();
+        
+        // 检查用户是否在房间中
+        auto current_room_it = user_current_room_.find(user_id);
+        if (current_room_it == user_current_room_.end())
+        {
+            send_error(hdl, "You must join a room before sending messages");
+            return;
+        }
+        
+        std::string room_id = current_room_it->second;
+        
+        // 构造聊天消息
+        json chat_msg = {
+            {"type", "chat_message"},
+            {"user_id", user_id},
+            {"room_id", room_id},
+            {"content", content},
+            {"timestamp", std::time(nullptr)}
+        };
+        
+        // 广播到房间内所有用户（包括发送者）
+        broadcast_to_room(room_id, chat_msg.dump());
+        
+        LOG_INFO << "Chat message from user " << user_id << " in room " << room_id;
+    }
+    catch (const json::exception& e)
+    {
+        LOG_ERROR << "Error processing chat message from user " << user_id << ": " << e.what();
+        send_error(hdl, "Missing required field: content");
+    }
+}
+
+void WebSocketServer::join_room(const std::string& user_id, const std::string& room_id)
+{
+    room_members_[room_id].insert(user_id);
+    user_current_room_[user_id] = room_id;
+}
+
+void WebSocketServer::leave_room(const std::string& user_id, const std::string& room_id)
+{
+    auto room_it = room_members_.find(room_id);
+    if (room_it != room_members_.end())
+    {
+        room_it->second.erase(user_id);
+        // 如果房间空了，删除房间
+        if (room_it->second.empty())
+        {
+            room_members_.erase(room_it);
+        }
+    }
+    user_current_room_.erase(user_id);
+}
+
+void WebSocketServer::send_error(connection_hdl hdl, const std::string& error_message)
+{
+    json error_response = {
+        {"type", "error"},
+        {"message", error_message}
+    };
+    try
+    {
+        server_.send(hdl, error_response.dump(), websocketpp::frame::opcode::text);
+    }
+    catch (const std::exception& e)
+    {
+        LOG_ERROR << "Failed to send error message: " << e.what();
+    }
+}
+
+void WebSocketServer::broadcast_to_room(const std::string &room_id, const std::string &message)
+{
+    broadcast_to_room(room_id, message, ""); // 空字符串表示不排除任何用户
+}
+
+void WebSocketServer::broadcast_to_room(const std::string &room_id, const std::string &message, const std::string &exclude_user_id)
+{
+    std::lock_guard<std::mutex> lock(connection_mutex_);
+    auto room_it = room_members_.find(room_id);
+    if (room_it == room_members_.end())
+    {
+        LOG_WARN << "Attempted to broadcast to non-existent room: " << room_id;
+        return;
+    }
+    
+    int sent_count = 0;
+    for (const std::string& user_id : room_it->second)
+    {
+        if (user_id == exclude_user_id)
+            continue; // 跳过被排除的用户
+            
+        auto conn_it = user_connections_.find(user_id);
+        if (conn_it != user_connections_.end())
+        {
+            try
+            {
+                server_.send(conn_it->second, message, websocketpp::frame::opcode::text);
+                sent_count++;
+            }
+            catch (const std::exception& e)
+            {
+                LOG_ERROR << "Failed to send message to user " << user_id << " in room " << room_id << ": " << e.what();
+            }
+        }
+    }
+    
+    LOG_INFO << "Broadcasted message to " << sent_count << " users in room: " << room_id;
 }
