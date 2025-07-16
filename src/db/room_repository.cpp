@@ -172,7 +172,7 @@ std::optional<nlohmann::json> RoomRepository::getRoomById(const std::string &roo
 
         // 使用nlohmann::json构造房间信息
         nlohmann::json room_json = {
-            {"id", reinterpret_cast<const char*>(id_col)},
+            {"roomid", reinterpret_cast<const char*>(id_col)},
             {"name", reinterpret_cast<const char*>(name_col)},
             {"description", desc_col ? reinterpret_cast<const char*>(desc_col) : ""}, // 处理description可能为NULL的情况
             {"creator_id", reinterpret_cast<const char*>(creator_id_col)},
@@ -320,4 +320,91 @@ std::string RoomRepository::generateRoomId()
         ss << std::hex << dis(gen);
     }
     return ss.str();
+}
+
+std::optional<std::string> RoomRepository::getRoomIdByName(const std::string &room_name) const
+{
+    LOG_INFO << "getRoomIdByName called with room_name: '" << room_name << "'";
+    
+    // 1. 检查数据库连接
+    if (!db_conn_ || !db_conn_->isConnected())
+    {
+        LOG_ERROR << "Database connection is null or not connected";
+        return std::nullopt;
+    }
+
+    // 2. 获取锁以保证线程安全
+    std::lock_guard<std::recursive_mutex> lock(db_conn_->getMutex());
+
+    // 3. 准备SQL查询语句
+    const char *sql = "SELECT id FROM rooms WHERE name = ?;";
+    sqlite3_stmt *stmt;
+
+    if (sqlite3_prepare_v2(db_conn_->getDb(), sql, -1, &stmt, nullptr) != SQLITE_OK)
+    {
+        LOG_ERROR << "Failed to prepare statement for getRoomIdByName: " << sqlite3_errmsg(db_conn_->getDb());
+        return std::nullopt;
+    }
+
+    // 4. 绑定参数
+    sqlite3_bind_text(stmt, 1, room_name.c_str(), -1, SQLITE_STATIC);
+    LOG_INFO << "Executing SQL query with room_name: '" << room_name << "'";
+
+    // 5. 执行查询并处理结果
+    int step_result = sqlite3_step(stmt);
+    LOG_INFO << "SQLite step result: " << step_result << " (SQLITE_ROW=" << SQLITE_ROW << ", SQLITE_DONE=" << SQLITE_DONE << ")";
+    
+    if (step_result == SQLITE_ROW)
+    {
+        // 找到了匹配的房间，获取房间ID
+        const unsigned char* id_col = sqlite3_column_text(stmt, 0);
+        std::string room_id = reinterpret_cast<const char*>(id_col);
+
+        LOG_INFO << "Found room ID: '" << room_id << "' for room name: '" << room_name << "'";
+        
+        // 6. 释放语句句柄并返回结果
+        sqlite3_finalize(stmt);
+        return room_id;
+    }
+    else
+    {
+        // 未找到匹配的房间名
+        LOG_WARN << "No room found with name: '" << room_name << "'";
+        sqlite3_finalize(stmt);
+        return std::nullopt;
+    }
+}
+
+std::vector<nlohmann::json> RoomRepository::getAllRooms()
+{
+    std::vector<nlohmann::json> rooms;
+    if (!db_conn_->isConnected()) return rooms;
+    
+    std::lock_guard<std::recursive_mutex> lock(db_conn_->getMutex());
+    const char *sql = "SELECT id, name, description, creator_id, created_at, "
+                      "(SELECT COUNT(*) FROM room_members WHERE room_id = rooms.id) as member_count "
+                      "FROM rooms ORDER BY created_at DESC;";
+    sqlite3_stmt *stmt;
+
+    if (sqlite3_prepare_v2(db_conn_->getDb(), sql, -1, &stmt, nullptr) != SQLITE_OK)
+    {
+        LOG_ERROR << "Failed to prepare statement for getAllRooms: " << sqlite3_errmsg(db_conn_->getDb());
+        return rooms;
+    }
+
+    while (sqlite3_step(stmt) == SQLITE_ROW)
+    {
+        nlohmann::json room = {
+            {"id", reinterpret_cast<const char *>(sqlite3_column_text(stmt, 0))},
+            {"name", reinterpret_cast<const char *>(sqlite3_column_text(stmt, 1))},
+            {"description", reinterpret_cast<const char *>(sqlite3_column_text(stmt, 2))},
+            {"creator_id", reinterpret_cast<const char *>(sqlite3_column_text(stmt, 3))},
+            {"created_at", sqlite3_column_int64(stmt, 4)},
+            {"member_count", sqlite3_column_int(stmt, 5)}
+        };
+        rooms.push_back(room);
+    }
+
+    sqlite3_finalize(stmt);
+    return rooms;
 }

@@ -18,8 +18,10 @@ public:
     bool updateRoom(const std::string &room_id, const std::string &name, const std::string &description);// 更新房间
     
     // 房间查询
-    std::vector<std::string> getRooms();// 获取所有房间
+    std::vector<std::string> getRooms();// 获取所有房间（仅名称）
+    std::vector<nlohmann::json> getAllRooms();// 获取所有房间的详细信息
     std::optional<nlohmann::json> getRoomById(const std::string &room_id) const;// 根据ID获取房间信息
+    std::optional<std::string> getRoomIdByName(const std::string &room_name) const;// 根据房间名获取房间ID
     bool isRoomCreator(const std::string &room_id, const std::string &user_id);// 检查是否为房间创建者
     
     // 房间成员管理
