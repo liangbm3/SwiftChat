@@ -3,70 +3,144 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>C++ WebSocket 聊天室</title>
-    <link rel="stylesheet" href="style.css">
-    <link rel="preconnect" href="https://fonts.googleapis.com">
-    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-    <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+SC:wght@400;700&display=swap" rel="stylesheet">
-    <script src="https://kit.fontawesome.com/a076d05399.js" crossorigin="anonymous"></script> </head>
+    <title>SwiftChat - 实时聊天应用</title>
+    <link rel="stylesheet" href="css/styles.css">
+    <link rel="icon" href="favicon.ico" type="image/x-icon">
+</head>
 <body>
+    <div id="app">
+        <!-- 登录界面 -->
+        <div id="auth-container" class="container">
+            <div class="auth-card">
+                <h1>SwiftChat</h1>
+                <p class="subtitle">实时聊天应用</p>
+                
+                <div class="tab-container">
+                    <button class="tab-btn active" onclick="showLogin()">登录</button>
+                    <button class="tab-btn" onclick="showRegister()">注册</button>
+                </div>
 
-    <div id="auth-modal" class="modal-overlay">
-        <div class="modal-content">
-            <div class="modal-header">
-                <h2 id="modal-title">登录</h2>
-                <div id="auth-error" class="error-message"></div>
+                <!-- 登录表单 -->
+                <form id="login-form" class="auth-form">
+                    <div class="input-group">
+                        <label for="login-username">用户名</label>
+                        <input type="text" id="login-username" required placeholder="请输入用户名">
+                    </div>
+                    <div class="input-group">
+                        <label for="login-password">密码</label>
+                        <input type="password" id="login-password" required placeholder="请输入密码">
+                    </div>
+                    <button type="submit" class="btn-primary">登录</button>
+                </form>
+
+                <!-- 注册表单 -->
+                <form id="register-form" class="auth-form hidden">
+                    <div class="input-group">
+                        <label for="register-username">用户名</label>
+                        <input type="text" id="register-username" required placeholder="请输入用户名">
+                    </div>
+                    <div class="input-group">
+                        <label for="register-password">密码</label>
+                        <input type="password" id="register-password" required placeholder="请输入密码">
+                    </div>
+                    <div class="input-group">
+                        <label for="register-confirm">确认密码</label>
+                        <input type="password" id="register-confirm" required placeholder="请再次输入密码">
+                    </div>
+                    <button type="submit" class="btn-primary">注册</button>
+                </form>
+
+                <div id="auth-message" class="message"></div>
             </div>
-            <form id="auth-form">
-                <div class="form-group">
-                    <label for="username">用户名</label>
-                    <input type="text" id="username" name="username" required>
+        </div>
+
+        <!-- 聊天界面 -->
+        <div id="chat-container" class="container hidden">
+            <div class="chat-layout">
+                <!-- 侧边栏 -->
+                <div class="sidebar">
+                    <div class="user-info">
+                        <div class="user-avatar">👤</div>
+                        <div class="user-details">
+                            <div id="current-username" class="username">用户名</div>
+                            <div class="status online">在线</div>
+                        </div>
+                        <button id="logout-btn" class="btn-logout" title="退出登录">🚪</button>
+                    </div>
+
+                    <div class="room-section">
+                        <div class="section-header">
+                            <h3>聊天房间</h3>
+                            <button id="create-room-btn" class="btn-create" title="创建房间">+</button>
+                        </div>
+                        <div id="room-list" class="room-list">
+                            <!-- 房间列表将在这里动态生成 -->
+                        </div>
+                    </div>
                 </div>
-                <div class="form-group">
-                    <label for="password">密码</label>
-                    <input type="password" id="password" name="password" required>
+
+                <!-- 主聊天区域 -->
+                <div class="main-chat">
+                    <div id="no-room-selected" class="no-room">
+                        <h2>欢迎使用 SwiftChat</h2>
+                        <p>请选择一个房间开始聊天，或创建一个新房间</p>
+                    </div>
+
+                    <div id="chat-room" class="chat-room hidden">
+                        <div class="room-header">
+                            <h2 id="current-room-name">房间名称</h2>
+                            <div class="room-actions">
+                                <button id="leave-room-btn" class="btn-secondary">离开房间</button>
+                            </div>
+                        </div>
+
+                        <div id="messages-container" class="messages-container">
+                            <!-- 消息将在这里显示 -->
+                        </div>
+
+                        <div class="message-input-container">
+                            <div class="input-group">
+                                <input type="text" id="message-input" placeholder="输入消息..." maxlength="500">
+                                <button id="send-btn" class="btn-send">发送</button>
+                            </div>
+                        </div>
+                    </div>
                 </div>
-                <div class="form-actions">
-                    <button type="submit" id="login-btn" class="btn primary">登录</button>
-                    <button type="button" id="register-btn" class="btn secondary">注册</button>
+            </div>
+        </div>
+
+        <!-- 创建房间模态框 -->
+        <div id="create-room-modal" class="modal hidden">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h3>创建新房间</h3>
+                    <button class="modal-close">&times;</button>
                 </div>
-            </form>
+                <form id="create-room-form">
+                    <div class="input-group">
+                        <label for="room-name">房间名称</label>
+                        <input type="text" id="room-name" required placeholder="请输入房间名称" maxlength="50">
+                    </div>
+                    <div class="modal-actions">
+                        <button type="button" class="btn-secondary" onclick="closeCreateRoomModal()">取消</button>
+                        <button type="submit" class="btn-primary">创建房间</button>
+                    </div>
+                </form>
+            </div>
+        </div>
+
+        <!-- 加载遮罩 -->
+        <div id="loading" class="loading hidden">
+            <div class="spinner"></div>
+            <p>连接中...</p>
+        </div>
+
+        <!-- 连接状态指示器 -->
+        <div id="connection-status" class="connection-status hidden">
+            <span id="connection-text">连接中...</span>
         </div>
     </div>
 
-    <div id="chat-container" class="chat-container hidden">
-        <aside class="sidebar rooms-panel">
-            <header>
-                <h3>聊天室</h3>
-            </header>
-            <ul id="room-list">
-                </ul>
-        </aside>
-
-        <main class="chat-area">
-            <header class="chat-header">
-                <h2 id="current-room-name"># General</h2>
-                <span id="user-count">0 users</span>
-            </header>
-            <div id="message-list" class="message-list">
-                </div>
-            <form id="message-form" class="message-form">
-                <input type="text" id="message-input" placeholder="输入消息..." autocomplete="off" required>
-                <button type="submit" class="send-btn">
-                    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor" width="24" height="24"><path d="M2.01 21L23 12 2.01 3 2 10l15 2-15 2z"/></svg>
-                </button>
-            </form>
-        </main>
-
-        <aside class="sidebar users-panel">
-            <header>
-                <h3>在线用户</h3>
-            </header>
-            <ul id="user-list">
-                </ul>
-        </aside>
-    </div>
-
-    <script src="app.js"></script>
+    <script src="js/app.js"></script>
 </body>
 </html>
