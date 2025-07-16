@@ -1,5 +1,8 @@
 #include "service/auth_service.hpp"
 #include "db/database_manager.hpp"
+#include "http/http_server.hpp"
+#include "http/http_request.hpp"
+#include "http/http_response.hpp"
 #include <nlohmann/json.hpp>
 #include <jwt-cpp/jwt.h>
 #include <chrono>
@@ -10,14 +13,42 @@ using json = nlohmann::json;
 
 AuthService::AuthService(DatabaseManager &db_manager) : db_manager_(db_manager) {}
 
+void AuthService::registerRoutes(http::HttpServer &server)
+{
+    http::HttpServer::Route register_route{
+        .path = "/api/v1/auth/register",
+        .method = "POST",
+        .handler = [this](const http::HttpRequest &request) -> http::HttpResponse {
+            return registerUser(request);
+        },
+        .use_auth_middleware = false // 注册不需要认证
+    };
+    server.addHandler(register_route);
+
+    http::HttpServer::Route login_route{
+        .path = "/api/v1/auth/login",
+        .method = "POST",
+        .handler = [this](const http::HttpRequest &request) -> http::HttpResponse {
+            return loginUser(request);
+        },
+        .use_auth_middleware = false // 登录不需要认证
+    };
+    server.addHandler(login_route);
+}
+
+
+
 http::HttpResponse AuthService::registerUser(const http::HttpRequest &request)
 {
     try
     {
+        LOG_INFO << "Processing user registration request";
         //解析请求体
         json request_body = json::parse(request.getBody());
         std::string username = request_body.at("username").get<std::string>();
         std::string password = request_body.at("password").get<std::string>();
+        
+        LOG_INFO << "Registration request for username: " << username;
 
         //检查用户是否存在
         if (db_manager_.userExists(username))
@@ -25,15 +56,23 @@ http::HttpResponse AuthService::registerUser(const http::HttpRequest &request)
             LOG_WARN << "User already exists: " << username;
             return http::HttpResponse::BadRequest("User already exists");
         }
+        
+        LOG_INFO << "User does not exist, proceeding with registration for: " << username;
 
         //对密码进行哈希处理
         std::string password_hash = hashPassword(password);
+        LOG_INFO << "Password hashed for user: " << username;
+        
         //创建用户
+        LOG_INFO << "Attempting to create user in database: " << username;
         if (!db_manager_.createUser(username, password_hash))
         {
             LOG_ERROR << "Failed to create user: " << username;
             return http::HttpResponse::InternalError("Failed to create user");
         }
+        
+        LOG_INFO << "User created successfully in database: " << username;
+        
         //通过用户名获取完整的信息
         auto user = db_manager_.getUserByUsername(username);
         if (!user)
