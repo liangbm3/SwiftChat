@@ -1,6 +1,7 @@
 #pragma once
 
 #include <string>
+#include <optional>
 
 // 前向声明
 namespace http {
