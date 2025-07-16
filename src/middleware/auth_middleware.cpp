@@ -33,7 +33,7 @@ namespace middleware
         try
         {
             //获取与签发时相同的密钥
-            const char *secret_key_cstr = std::getenv("JWT_SECRET_KEY");
+            const char *secret_key_cstr = std::getenv("JWT_SECRET");
             if (!secret_key_cstr)
             {
                 LOG_ERROR << "FATAL: JWT_SECRET_KEY not set for verification.";
@@ -49,8 +49,16 @@ namespace middleware
 
             verifier.verify(decoded_token);
 
+            // 获取用户信息（使用 subject 声明获取用户ID）
+            std::string user_id = decoded_token.get_subject();
+            std::string username = decoded_token.get_payload_claim("username").as_string();
+            
+            LOG_INFO << "JWT token verified successfully for user: " << username << " (ID: " << user_id << ")";
             // 验证通过，调用下一个处理器
-            return next(req);
+            auto response =  next(req);
+
+            
+            return response;
         }
         catch (const jwt::error::token_verification_exception &e)
         {
