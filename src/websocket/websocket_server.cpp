@@ -15,6 +15,9 @@ WebSocketServer::WebSocketServer()
     // 初始化Asio
     server_.init_asio();
 
+    // 设置重用地址选项
+    server_.set_reuse_addr(true);
+
     // 绑定事件处理程序
     setup_handlers();
 }
@@ -49,15 +52,28 @@ void WebSocketServer::run(uint16_t port)
                                  {
         try
         {
-            //设置监听端口
-            server_.listen(port);
+            LOG_INFO << "Starting WebSocket server on port " << port;
+            
+            // 设置监听端口
+            websocketpp::lib::error_code ec;
+            server_.listen(port, ec);
+            if (ec) {
+                LOG_ERROR << "WebSocket server listen error: " << ec.message();
+                return;
+            }
+            
             LOG_INFO << "WebSocket server listening on port " << port;
 
-            //开始接受连接
-            server_.start_accept();
+            // 开始接受连接
+            server_.start_accept(ec);
+            if (ec) {
+                LOG_ERROR << "WebSocket server start_accept error: " << ec.message();
+                return;
+            }
 
-            //运行Asio事件循环
+            // 运行Asio事件循环
             server_.run();
+            LOG_INFO << "WebSocket server event loop exited";
         }
         catch (const websocketpp::exception &e)
         {
@@ -71,14 +87,43 @@ void WebSocketServer::run(uint16_t port)
 
 void WebSocketServer::stop()
 {
-    if (!server_.is_listening())
-    {
-        return;
-    }
     LOG_INFO << "Stopping WebSocket server...";
-    server_.stop_listening(); // 停止监听新连接
-    server_.stop();           // 停止IO事件循环，导致run函数返回
-    server_thread_.join();    // 等待服务器线程结束
+    
+    try {
+        // 停止监听新连接
+        if (server_.is_listening()) {
+            websocketpp::lib::error_code ec;
+            server_.stop_listening(ec);
+            if (ec) {
+                LOG_ERROR << "Error stopping listening: " << ec.message();
+            }
+        }
+        
+        // 关闭所有现有连接
+        {
+            std::lock_guard<std::mutex> lock(connection_mutex_);
+            for (const auto& pair : connection_users_) {
+                websocketpp::lib::error_code ec;
+                server_.close(pair.first, websocketpp::close::status::going_away, "Server shutdown", ec);
+                if (ec) {
+                    LOG_ERROR << "Error closing connection: " << ec.message();
+                }
+            }
+        }
+        
+        // 停止IO事件循环
+        server_.stop();
+        
+        // 等待服务器线程结束
+        if (server_thread_.joinable()) {
+            server_thread_.join();
+        }
+        
+        LOG_INFO << "WebSocket server stopped successfully";
+    }
+    catch (const std::exception& e) {
+        LOG_ERROR << "Error stopping WebSocket server: " << e.what();
+    }
 }
 
 //-----事件处理函数的具体实现-----
@@ -413,7 +458,7 @@ void WebSocketServer::broadcast_to_room(const std::string &room_id, const std::s
 
 void WebSocketServer::broadcast_to_room(const std::string &room_id, const std::string &message, const std::string &exclude_user_id)
 {
-    std::lock_guard<std::mutex> lock(connection_mutex_);
+    //std::lock_guard<std::mutex> lock(connection_mutex_);//不能加锁，这里会发送死锁问题
     auto room_it = room_members_.find(room_id);
     if (room_it == room_members_.end())
     {

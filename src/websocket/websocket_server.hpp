@@ -26,9 +26,6 @@ struct ConnectionHdlEqual {
     }
 };
 
-using websocket_server = websocketpp::server<websocketpp::config::asio>;
-using connection_hdl = websocketpp::connection_hdl;
-
 class WebSocketServer
 {
 public:
