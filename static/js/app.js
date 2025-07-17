@@ -6,7 +6,7 @@ class SwiftChatApp {
         this.websocket = null;
         this.rooms = [];
         this.messages = [];
-        
+
         this.initializeApp();
         this.setupEventListeners();
     }
@@ -14,7 +14,7 @@ class SwiftChatApp {
     initializeApp() {
         // 请求通知权限
         this.checkNotificationPermission();
-        
+
         // 如果有存储的token，尝试自动登录
         if (this.authToken) {
             this.validateToken();
@@ -80,12 +80,12 @@ class SwiftChatApp {
     async validateToken() {
         try {
             this.showLoading('验证登录状态...');
-            
+
             // 检查token是否有效
             if (!this.authToken || this.authToken === 'undefined' || this.authToken === 'null') {
                 throw new Error('Invalid token');
             }
-            
+
             const response = await fetch('/api/protected', {
                 headers: {
                     'Authorization': `Bearer ${this.authToken}`
@@ -139,7 +139,7 @@ class SwiftChatApp {
                 localStorage.setItem('authToken', this.authToken);
                 this.currentUser = this.parseJWT(this.authToken);
                 this.showAuthMessage('登录成功！', 'success');
-                
+
                 setTimeout(() => {
                     this.showChatContainer();
                     this.connectWebSocket();
@@ -232,7 +232,7 @@ class SwiftChatApp {
 
         this.updateConnectionStatus('connecting');
 
-        const wsUrl = `ws://${window.location.hostname}:8081`;
+        const wsUrl = `ws://127.0.0.1:8081`;
         this.websocket = new WebSocket(wsUrl);
 
         this.websocket.onopen = () => {
@@ -321,7 +321,7 @@ class SwiftChatApp {
     async loadRooms() {
         try {
             const response = await fetch('/api/v1/rooms');
-            
+
             if (response.ok) {
                 const data = await response.json();
                 // 修复：后端返回的是 data.data.rooms
@@ -372,7 +372,7 @@ class SwiftChatApp {
     async joinRoom(room) {
         console.log('尝试加入房间:', room);
         console.log('当前房间:', this.currentRoom);
-        
+
         if (this.currentRoom && this.currentRoom.id === room.id) {
             console.log('已经在这个房间了');
             return; // 已经在这个房间了
@@ -459,7 +459,7 @@ class SwiftChatApp {
                 this.closeCreateRoomModal();
                 document.getElementById('create-room-form').reset();
                 this.loadRooms();
-                
+
                 // 自动加入新创建的房间
                 if (data.room) {
                     setTimeout(() => {
@@ -536,7 +536,7 @@ class SwiftChatApp {
     createMessageElement(message) {
         const messageDiv = document.createElement('div');
         messageDiv.className = 'message';
-        
+
         if (message.sender === this.currentUser.username) {
             messageDiv.classList.add('own');
         }
@@ -572,7 +572,7 @@ class SwiftChatApp {
             // 如果不是自己发送的消息，播放通知
             if (message.sender !== this.currentUser.username) {
                 this.playNotificationSound();
-                
+
                 // 如果页面不在焦点，显示桌面通知
                 if (document.hidden) {
                     this.showDesktopNotification(
@@ -585,17 +585,24 @@ class SwiftChatApp {
     }
 
     sendMessage() {
+        console.log('--- 1. sendMessage 函数被触发 ---'); // 第1个航点
         const messageInput = document.getElementById('message-input');
         const content = messageInput.value.trim();
-
+        console.log('--- 2. 获取到的内容:', content, '---');
+        console.log('--- 3. 当前房间:', this.currentRoom, '---');
         if (!content || !this.currentRoom) return;
 
-        // 通过WebSocket发送消息
-        this.sendWebSocketMessage({
+
+        const messageToSend = {
             type: 'chat_message',
             room_id: this.currentRoom.id,
             content: content
-        });
+        };
+
+        console.log('--- 4. 准备通过WebSocket发送消息:', messageToSend, '---'); // 第4个航点
+
+        // 通过WebSocket发送消息
+        this.sendWebSocketMessage(messageToSend);
 
         // 清空输入框
         messageInput.value = '';
@@ -635,7 +642,7 @@ class SwiftChatApp {
     showChatContainer() {
         document.getElementById('auth-container').classList.add('hidden');
         document.getElementById('chat-container').classList.remove('hidden');
-        
+
         if (this.currentUser) {
             document.getElementById('current-username').textContent = this.currentUser.username;
         }
@@ -644,20 +651,20 @@ class SwiftChatApp {
     showLogin() {
         document.getElementById('login-form').classList.remove('hidden');
         document.getElementById('register-form').classList.add('hidden');
-        
+
         document.querySelectorAll('.tab-btn').forEach(btn => btn.classList.remove('active'));
         document.querySelector('.tab-btn').classList.add('active');
-        
+
         this.clearAuthMessage();
     }
 
     showRegister() {
         document.getElementById('login-form').classList.add('hidden');
         document.getElementById('register-form').classList.remove('hidden');
-        
+
         document.querySelectorAll('.tab-btn').forEach(btn => btn.classList.remove('active'));
         document.querySelectorAll('.tab-btn')[1].classList.add('active');
-        
+
         this.clearAuthMessage();
     }
 
@@ -669,7 +676,7 @@ class SwiftChatApp {
     showChatRoom() {
         document.getElementById('no-room-selected').classList.add('hidden');
         document.getElementById('chat-room').classList.remove('hidden');
-        
+
         if (this.currentRoom) {
             document.getElementById('current-room-name').textContent = this.currentRoom.name;
         }
@@ -713,7 +720,7 @@ class SwiftChatApp {
         const messageElement = document.getElementById('auth-message');
         messageElement.textContent = message;
         messageElement.className = `message ${type}`;
-        
+
         // 3秒后自动清除消息
         setTimeout(() => {
             this.clearAuthMessage();
@@ -737,10 +744,10 @@ class SwiftChatApp {
         try {
             const base64Url = token.split('.')[1];
             const base64 = base64Url.replace(/-/g, '+').replace(/_/g, '/');
-            const jsonPayload = decodeURIComponent(atob(base64).split('').map(function(c) {
+            const jsonPayload = decodeURIComponent(atob(base64).split('').map(function (c) {
                 return '%' + ('00' + c.charCodeAt(0).toString(16)).slice(-2);
             }).join(''));
-            
+
             return JSON.parse(jsonPayload);
         } catch (error) {
             console.error('解析JWT错误:', error);
@@ -773,9 +780,9 @@ class SwiftChatApp {
     updateConnectionStatus(status) {
         const statusElement = document.getElementById('connection-status');
         const textElement = document.getElementById('connection-text');
-        
+
         statusElement.className = `connection-status ${status}`;
-        
+
         switch (status) {
             case 'connected':
                 textElement.textContent = '已连接';
@@ -811,17 +818,17 @@ class SwiftChatApp {
             const audioContext = new (window.AudioContext || window.webkitAudioContext)();
             const oscillator = audioContext.createOscillator();
             const gainNode = audioContext.createGain();
-            
+
             oscillator.connect(gainNode);
             gainNode.connect(audioContext.destination);
-            
+
             oscillator.frequency.value = 800;
             oscillator.type = 'sine';
-            
+
             gainNode.gain.setValueAtTime(0, audioContext.currentTime);
             gainNode.gain.linearRampToValueAtTime(0.1, audioContext.currentTime + 0.01);
             gainNode.gain.exponentialRampToValueAtTime(0.01, audioContext.currentTime + 0.5);
-            
+
             oscillator.start(audioContext.currentTime);
             oscillator.stop(audioContext.currentTime + 0.5);
         } catch (error) {
