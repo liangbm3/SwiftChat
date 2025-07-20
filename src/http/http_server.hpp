@@ -47,6 +47,8 @@ namespace http
         HttpResponse serveStaticFile(const std::string &path); // 返回HttpResponse对象
 
     private:
+        // 路径参数匹配和提取
+        bool matchPath(const std::string& pattern, const std::string& path, std::unordered_map<std::string, std::string>& params);
         int port_;
         int server_fd_;
         bool running_;

@@ -9,6 +9,7 @@
 #include <unistd.h>
 #include <csignal>
 #include <sys/stat.h>
+#include <vector>
 
 namespace http
 {
@@ -146,15 +147,71 @@ namespace http
             char buffer[BUFFER_SIZE];
             std::string request_data;
 
-            // 1. 读取请求数据 (简化版，适用于大多数情况)
-            ssize_t bytes_received = recv(client_fd, buffer, BUFFER_SIZE - 1, 0);
-            if (bytes_received <= 0)
+            // 1. 读取请求数据 - 改进版，支持分段接收
+            bool headers_complete = false;
+            size_t expected_content_length = 0;
+            
+            while (true)
             {
-                // ... (处理错误或断开连接)
-                close(client_fd);
-                return;
+                ssize_t bytes_received = recv(client_fd, buffer, BUFFER_SIZE - 1, 0);
+                if (bytes_received <= 0)
+                {
+                    break; // 连接断开或错误
+                }
+                
+                request_data.append(buffer, bytes_received);
+                
+                // 检查是否接收到完整的头部
+                if (!headers_complete)
+                {
+                    size_t header_end = request_data.find("\r\n\r\n");
+                    if (header_end != std::string::npos)
+                    {
+                        headers_complete = true;
+                        
+                        // 解析Content-Length
+                        std::string headers = request_data.substr(0, header_end);
+                        size_t content_length_pos = headers.find("Content-Length:");
+                        if (content_length_pos != std::string::npos)
+                        {
+                            size_t value_start = headers.find(':', content_length_pos) + 1;
+                            size_t value_end = headers.find('\r', value_start);
+                            std::string length_str = headers.substr(value_start, value_end - value_start);
+                            
+                            // 去除空格
+                            length_str.erase(0, length_str.find_first_not_of(" \t"));
+                            length_str.erase(length_str.find_last_not_of(" \t") + 1);
+                            
+                            try 
+                            {
+                                expected_content_length = std::stoul(length_str);
+                            }
+                            catch (...)
+                            {
+                                expected_content_length = 0;
+                            }
+                        }
+                    }
+                }
+                
+                // 如果头部已完成，检查是否接收到足够的请求体
+                if (headers_complete)
+                {
+                    size_t headers_size = request_data.find("\r\n\r\n") + 4;
+                    size_t current_body_size = request_data.size() - headers_size;
+                    
+                    if (current_body_size >= expected_content_length)
+                    {
+                        break; // 接收完整
+                    }
+                }
+                
+                // 如果是GET请求或其他没有请求体的请求，在收到头部后立即处理
+                if (headers_complete && expected_content_length == 0)
+                {
+                    break;
+                }
             }
-            request_data.append(buffer, bytes_received);
 
             // 2. [适配] 使用新的 HttpRequest API
             auto request_opt = HttpRequest::parse(request_data);
@@ -209,19 +266,28 @@ namespace http
         // 遍历注册的所有路由
         for (const auto &route : routes_)
         {
-            // 检查请求方法和路径是否匹配
-            if (route.method == request.getMethod() && route.path == request.getPath())
+            // 检查请求方法是否匹配
+            if (route.method == request.getMethod())
             {
-                // 检查这个路由是否需要验证
-                if (route.use_auth_middleware && middleware_)
+                std::unordered_map<std::string, std::string> pathParams;
+                // 检查路径是否匹配（支持路径参数）
+                if (matchPath(route.path, request.getPath(), pathParams))
                 {
-                    // 使用中间件处理请求
-                    return middleware_(request, route.handler);
-                }
-                else
-                {
-                    // 直接调用处理函数
-                    return route.handler(request);
+                    // 创建一个可修改的请求副本来设置路径参数
+                    HttpRequest modifiableRequest = request;
+                    modifiableRequest.setPathParams(pathParams);
+                    
+                    // 检查这个路由是否需要验证
+                    if (route.use_auth_middleware && middleware_)
+                    {
+                        // 使用中间件处理请求
+                        return middleware_(modifiableRequest, route.handler);
+                    }
+                    else
+                    {
+                        // 直接调用处理函数
+                        return route.handler(modifiableRequest);
+                    }
                 }
             }
         }
@@ -273,5 +339,52 @@ namespace http
         return HttpResponse::Ok()
             .withBody(content, mime_type)
             .withHeader("Cache-Control", "public, max-age=3600");
+    }
+
+    // 路径参数匹配和提取实现
+    bool HttpServer::matchPath(const std::string& pattern, const std::string& path, std::unordered_map<std::string, std::string>& params)
+    {
+        params.clear();
+        
+        // 分割模式和路径
+        auto splitPath = [](const std::string& str) -> std::vector<std::string> {
+            std::vector<std::string> segments;
+            std::stringstream ss(str);
+            std::string segment;
+            while (std::getline(ss, segment, '/')) {
+                if (!segment.empty()) {
+                    segments.push_back(segment);
+                }
+            }
+            return segments;
+        };
+        
+        auto patternSegments = splitPath(pattern);
+        auto pathSegments = splitPath(path);
+        
+        // 段数必须相同
+        if (patternSegments.size() != pathSegments.size()) {
+            return false;
+        }
+        
+        // 逐段匹配
+        for (size_t i = 0; i < patternSegments.size(); ++i) {
+            const std::string& patternSeg = patternSegments[i];
+            const std::string& pathSeg = pathSegments[i];
+            
+            // 检查是否为参数段（以{开头并以}结尾）
+            if (patternSeg.length() > 2 && patternSeg.front() == '{' && patternSeg.back() == '}') {
+                // 提取参数名（去掉{}）
+                std::string paramName = patternSeg.substr(1, patternSeg.length() - 2);
+                params[paramName] = pathSeg;
+            } else {
+                // 精确匹配
+                if (patternSeg != pathSeg) {
+                    return false;
+                }
+            }
+        }
+        
+        return true;
     }
 }
