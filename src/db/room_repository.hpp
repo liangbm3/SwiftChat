@@ -5,7 +5,7 @@
 #include <optional>
 #include <nlohmann/json.hpp>
 #include "database_connection.hpp"
-#include "../chat/room.hpp"
+#include "../model/room.hpp"
 
 // 房间数据访问类
 class RoomRepository

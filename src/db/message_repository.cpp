@@ -1,6 +1,6 @@
 #include "message_repository.hpp"
 #include "../utils/logger.hpp"
-#include "../chat/user.hpp"
+#include "../model/user.hpp"
 #include <chrono>
 
 MessageRepository::MessageRepository(DatabaseConnection* db_conn) : db_conn_(db_conn) {}

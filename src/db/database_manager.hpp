@@ -6,9 +6,9 @@
 #include "user_repository.hpp"
 #include "room_repository.hpp"
 #include "message_repository.hpp"
-#include "../chat/user.hpp"
-#include "../chat/room.hpp"
-#include "../chat/message.hpp"
+#include "../model/user.hpp"
+#include "../model/room.hpp"
+#include "../model/message.hpp"
 
 // 重构后的数据库管理类 - 作为各个仓库的组合
 class DatabaseManager

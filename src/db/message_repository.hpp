@@ -5,7 +5,7 @@
 #include <optional>
 #include <nlohmann/json.hpp>
 #include "database_connection.hpp"
-#include "../chat/message.hpp"
+#include "../model/message.hpp"
 
 // 消息数据访问类
 class MessageRepository

@@ -4,7 +4,7 @@
 #include <vector>
 #include <optional>
 #include "database_connection.hpp"
-#include "../chat/user.hpp"
+#include "../model/user.hpp"
 
 // 用户数据访问类
 class UserRepository
