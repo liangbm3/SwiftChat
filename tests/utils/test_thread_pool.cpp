@@ -1,40 +1,49 @@
-#include "../src/utils/thread_pool.hpp"
+#include <gtest/gtest.h>
+#include "../../src/utils/thread_pool.hpp"
 #include <iostream>
 #include <chrono>
 #include <atomic>
 #include <vector>
-#include <cassert>
+#include <future>
 
 using namespace utils;
 
-// 测试函数1：简单的计算任务
-int add(int a, int b)
-{
-    std::this_thread::sleep_for(std::chrono::milliseconds(100));
-    return a + b;
+// 测试辅助函数
+namespace {
+    // 测试函数1：简单的计算任务
+    int add(int a, int b) {
+        std::this_thread::sleep_for(std::chrono::milliseconds(100));
+        return a + b;
+    }
+
+    // 测试函数2：无返回值的任务
+    void print_message(const std::string &msg) {
+        std::this_thread::sleep_for(std::chrono::milliseconds(50));
+        // 注意：在测试中避免直接输出到 cout
+    }
+
+    // 测试函数3：计算密集型任务
+    long long fibonacci(int n) {
+        if (n <= 1)
+            return n;
+        return fibonacci(n - 1) + fibonacci(n - 2);
+    }
 }
 
-// 测试函数2：无返回值的任务
-void print_message(const std::string &msg)
-{
-    std::this_thread::sleep_for(std::chrono::milliseconds(50));
-    std::cout << "Task: " << msg << " executed on thread "
-              << std::this_thread::get_id() << std::endl;
-}
+// ThreadPool 测试类
+class ThreadPoolTest : public ::testing::Test {
+protected:
+    void SetUp() override {
+        // 测试开始前的设置
+    }
 
-// 测试函数3：计算密集型任务
-long long fibonacci(int n)
-{
-    if (n <= 1)
-        return n;
-    return fibonacci(n - 1) + fibonacci(n - 2);
-}
+    void TearDown() override {
+        // 测试结束后的清理
+    }
+};
 
 // 测试1：基本功能测试
-void test_basic_functionality()
-{
-    std::cout << "\n=== 测试1: 基本功能测试 ===" << std::endl;
-
+TEST_F(ThreadPoolTest, BasicFunctionality) {
     ThreadPool pool(4);
 
     // 提交有返回值的任务
@@ -42,182 +51,158 @@ void test_basic_functionality()
     auto result2 = pool.enqueue(add, 5, 15);
 
     // 等待结果并验证
-    assert(result1.get() == 30);
-    assert(result2.get() == 20);
-
-    std::cout << "基本功能测试通过！" << std::endl;
+    EXPECT_EQ(result1.get(), 30);
+    EXPECT_EQ(result2.get(), 20);
 }
 
 // 测试2：并发任务测试
-void test_concurrent_tasks()
-{
-    std::cout << "\n=== 测试2: 并发任务测试 ===" << std::endl;
-
+TEST_F(ThreadPoolTest, ConcurrentTasks) {
     ThreadPool pool(4);
     std::vector<std::future<void>> futures;
+    std::atomic<int> task_count{0};
 
     // 提交多个并发任务
-    for (int i = 0; i < 10; ++i)
-    {
+    for (int i = 0; i < 10; ++i) {
         futures.push_back(
-            pool.enqueue(print_message, "Task " + std::to_string(i)));
+            pool.enqueue([&task_count, i]() {
+                std::this_thread::sleep_for(std::chrono::milliseconds(50));
+                task_count++;
+            }));
     }
 
     // 等待所有任务完成
-    for (auto &future : futures)
-    {
+    for (auto &future : futures) {
         future.get();
     }
 
-    std::cout << "并发任务测试完成！" << std::endl;
+    EXPECT_EQ(task_count.load(), 10);
 }
 
 // 测试3：性能测试
-void test_performance()
-{
-    std::cout << "\n=== 测试3: 性能测试 ===" << std::endl;
-
+TEST_F(ThreadPoolTest, Performance) {
     const int num_tasks = 20;
     ThreadPool pool(4);
 
     auto start = std::chrono::high_resolution_clock::now();
 
     std::vector<std::future<long long>> futures;
-    for (int i = 0; i < num_tasks; ++i)
-    {
+    for (int i = 0; i < num_tasks; ++i) {
         futures.push_back(pool.enqueue(fibonacci, 30));
     }
 
     // 等待所有任务完成
     long long total = 0;
-    for (auto &future : futures)
-    {
+    for (auto &future : futures) {
         total += future.get();
     }
 
     auto end = std::chrono::high_resolution_clock::now();
     auto duration = std::chrono::duration_cast<std::chrono::milliseconds>(end - start);
 
-    std::cout << "执行 " << num_tasks << " 个斐波那契(30)任务耗时: "
-              << duration.count() << " ms" << std::endl;
-    std::cout << "总和: " << total << std::endl;
+    // 验证结果正确性（fibonacci(30) = 832040）
+    EXPECT_EQ(total, 832040LL * num_tasks);
+    
+    // 性能断言：并发执行应该比串行快
+    // 单线程执行20次fibonacci(30)大约需要更长时间
+    EXPECT_LT(duration.count(), 10000); // 应该在10秒内完成
 }
 
 // 测试4：异常处理测试
-void test_exception_handling()
-{
-    std::cout << "\n=== 测试4: 异常处理测试 ===" << std::endl;
-
+TEST_F(ThreadPoolTest, ExceptionHandling) {
     ThreadPool pool(2);
 
-    // 测试会抛出异常的任务
-    auto future1 = pool.enqueue([]() -> int
-                                {
+    // 提交一个会抛出异常的任务
+    auto future = pool.enqueue([]() -> int {
         throw std::runtime_error("测试异常");
-        return 42; });
+        return 42;
+    });
 
-    try
-    {
-        future1.get();
-        assert(false); // 不应该到达这里
-    }
-    catch (const std::exception &e)
-    {
-        std::cout << "捕获到预期异常: " << e.what() << std::endl;
-    }
+    // 验证异常能够被正确捕获
+    EXPECT_THROW({
+        try {
+            future.get();
+        } catch (const std::runtime_error& e) {
+            EXPECT_STREQ(e.what(), "测试异常");
+            throw;
+        }
+    }, std::runtime_error);
 
-    // 测试正常任务仍然可以执行
-    auto future2 = pool.enqueue([]() -> int
-                                { return 100; });
-
-    assert(future2.get() == 100);
-    std::cout << "异常处理测试通过！" << std::endl;
+    // 验证线程池仍然可以处理正常任务
+    auto normal_future = pool.enqueue([]() { return 42; });
+    EXPECT_EQ(normal_future.get(), 42);
 }
 
 // 测试5：线程池销毁测试
-void test_thread_pool_destruction()
-{
-    std::cout << "\n=== 测试5: 线程池销毁测试 ===" << std::endl;
-
-    std::atomic<int> counter{0};
-
+TEST_F(ThreadPoolTest, ThreadPoolDestruction) {
+    // 在作用域内创建线程池
     {
-        ThreadPool pool(4);
-
+        ThreadPool pool(2);
+        
         // 提交一些任务
-        for (int i = 0; i < 10; ++i)
-        {
-            pool.enqueue([&counter]()
-                         {
-                std::this_thread::sleep_for(std::chrono::milliseconds(100));
-                counter++; });
+        std::vector<std::future<int>> futures;
+        for (int i = 0; i < 10; ++i) {
+            futures.push_back(pool.enqueue([i]() {
+                std::this_thread::sleep_for(std::chrono::milliseconds(10));
+                return i * i;
+            }));
         }
-
-        // 线程池在作用域结束时会被销毁
-        std::cout << "线程池即将销毁..." << std::endl;
-    }
-
-    std::cout << "线程池已销毁，完成的任务数: " << counter.load() << std::endl;
-    std::cout << "线程池销毁测试完成！" << std::endl;
+        
+        // 等待任务完成
+        for (int i = 0; i < 10; ++i) {
+            EXPECT_EQ(futures[i].get(), i * i);
+        }
+    } // 线程池在这里被销毁
+    
+    // 如果程序没有崩溃或挂起，说明销毁正常
+    SUCCEED();
 }
 
-// 测试6：停止后提交任务测试
-void test_enqueue_after_stop()
-{
-    std::cout << "\n=== 测试6: 停止后提交任务测试 ===" << std::endl;
-
-    ThreadPool *pool = new ThreadPool(2);
-
-    // 删除线程池
-    delete pool;
-
-    // 注意：这里无法直接测试因为析构函数已经被调用
-    // 在实际使用中，应该确保线程池对象的生命周期管理
-
-    std::cout << "停止后提交任务测试完成！" << std::endl;
-}
-
-// 测试7：lambda表达式测试
-void test_lambda_functions()
-{
-    std::cout << "\n=== 测试7: Lambda表达式测试 ===" << std::endl;
-
-    ThreadPool pool(3);
-
-    int x = 10;
-    auto future1 = pool.enqueue([x](int y) -> int
-                                { return x * y; }, 5);
-
-    auto future2 = pool.enqueue([](const std::string &str) -> size_t
-                                { return str.length(); }, std::string("Hello World"));
-
-    assert(future1.get() == 50);
-    assert(future2.get() == 11);
-
-    std::cout << "Lambda表达式测试通过！" << std::endl;
-}
-
-int main()
-{
-    std::cout << "开始线程池测试..." << std::endl;
-
-    try
+// 测试6：边界条件测试  
+TEST_F(ThreadPoolTest, EdgeCases) {
+    // 测试单线程池
     {
-        test_basic_functionality();
-        test_concurrent_tasks();
-        test_performance();
-        test_exception_handling();
-        test_thread_pool_destruction();
-        test_enqueue_after_stop();
-        test_lambda_functions();
-
-        std::cout << "\n=== 所有测试通过！ ===" << std::endl;
+        ThreadPool pool(1);
+        auto future = pool.enqueue([]() { return 42; });
+        EXPECT_EQ(future.get(), 42);
     }
-    catch (const std::exception &e)
+    
+    // 测试提交任务到已销毁的线程池（通过作用域控制）
+    // 注意：实际使用中应避免这种情况
+    std::future<int> future;
     {
-        std::cerr << "测试失败: " << e.what() << std::endl;
-        return 1;
+        ThreadPool pool(2);
+        // 在线程池还存在时提交任务
+        future = pool.enqueue([]() { 
+            std::this_thread::sleep_for(std::chrono::milliseconds(10));
+            return 100; 
+        });
+        // 这里线程池即将被销毁，但任务应该已经在执行
     }
+    
+    // 等待任务完成（即使线程池已被销毁，任务仍应完成）
+    EXPECT_EQ(future.get(), 100);
+}
 
-    return 0;
+// 测试7：停止后的任务提交测试
+TEST_F(ThreadPoolTest, EnqueueAfterStop) {
+    // 注意：ThreadPool类当前没有显式的stop方法
+    // 这个测试主要验证线程池销毁后的行为
+    
+    std::shared_ptr<ThreadPool> pool_ptr = std::make_shared<ThreadPool>(2);
+    
+    // 提交一个正常任务
+    auto future1 = pool_ptr->enqueue([]() { return 42; });
+    EXPECT_EQ(future1.get(), 42);
+    
+    // 销毁线程池
+    pool_ptr.reset();
+    
+    // 在实际应用中，应该避免在线程池销毁后继续使用
+    // 这里只是测试程序的健壮性
+    SUCCEED(); // 如果程序没有崩溃，测试通过
+}
+
+int main(int argc, char **argv) {
+    ::testing::InitGoogleTest(&argc, argv);
+    return RUN_ALL_TESTS();
 }
