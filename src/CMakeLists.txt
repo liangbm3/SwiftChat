@@ -3,12 +3,16 @@
 # 添加可执行文件
 add_executable(SwiftChat
     main.cpp
+    chat/user.cpp
+    chat/room.cpp
+    chat/message.cpp
     http/http_server.cpp
     http/http_request.cpp
     http/http_response.cpp
     utils/logger.cpp
     utils/thread_pool.cpp
     utils/timer.cpp
+    utils/jwt_utils.cpp
     service/auth_service.cpp
     service/room_service.cpp
     service/message_service.cpp
@@ -19,7 +23,6 @@ add_executable(SwiftChat
     db/user_repository.cpp
     db/room_repository.cpp
     db/message_repository.cpp
-    chat/user.cpp
 )
 
 # 设置包含目录

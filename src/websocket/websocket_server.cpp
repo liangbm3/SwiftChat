@@ -1,7 +1,7 @@
 #include "websocket_server.hpp"
 #include "utils/logger.hpp"
+#include "utils/jwt_utils.hpp"
 #include "db/database_manager.hpp"
-#include <jwt-cpp/jwt.h>
 #include <nlohmann/json.hpp>
 #include <ctime>
 
@@ -182,26 +182,31 @@ void WebSocketServer::on_message(connection_hdl hdl, websocket_server::message_p
                 std::string token = json_msg.at("token").get<std::string>();
 
                 // 验证JWT令牌
-                const char *secret_key_cstr = std::getenv("JWT_SECRET");
-                if (!secret_key_cstr)
+                auto verified_user_id = JwtUtils::verifyToken(token);
+                if (!verified_user_id)
                 {
-                    LOG_ERROR << "FATAL: JWT_SECRET not set for verification.";
+                    LOG_ERROR << "JWT verification failed for user: " << user_id;
                     json error_response = {
                         {"type", "auth_error"},
-                        {"message", "Server configuration error"}
+                        {"message", "Invalid token"}
                     };
                     server_.send(hdl, error_response.dump(), websocketpp::frame::opcode::text);
-                    server_.close(hdl, websocketpp::close::status::internal_endpoint_error, "Server configuration error");
+                    server_.close(hdl, websocketpp::close::status::policy_violation, "Invalid token");
                     return;
                 }
-                std::string secret_key(secret_key_cstr);
 
-                jwt::decoded_jwt decoded_token = jwt::decode(token);
-                auto verifier = jwt::verify()
-                                    .allow_algorithm(jwt::algorithm::hs256{secret_key})
-                                    .with_issuer("SwiftChat");
-
-                verifier.verify(decoded_token);
+                // 验证用户ID是否匹配
+                if (*verified_user_id != user_id)
+                {
+                    LOG_ERROR << "User ID mismatch: token contains " << *verified_user_id << " but request claims " << user_id;
+                    json error_response = {
+                        {"type", "auth_error"},
+                        {"message", "User ID mismatch"}
+                    };
+                    server_.send(hdl, error_response.dump(), websocketpp::frame::opcode::text);
+                    server_.close(hdl, websocketpp::close::status::policy_violation, "User ID mismatch");
+                    return;
+                }
 
                 // 认证通过，保存连接和用户ID映射
                 user_connections_[user_id] = hdl;
@@ -226,16 +231,6 @@ void WebSocketServer::on_message(connection_hdl hdl, websocket_server::message_p
         {
             LOG_ERROR << "JSON parsing error: " << e.what();
             server_.close(hdl, websocketpp::close::status::invalid_payload, "Invalid JSON format");
-        }
-        catch (const jwt::error::token_verification_exception &e)
-        {
-            LOG_ERROR << "JWT verification failed: " << e.what();
-            json error_response = {
-                {"type", "auth_error"},
-                {"message", "Invalid token"}
-            };
-            server_.send(hdl, error_response.dump(), websocketpp::frame::opcode::text);
-            server_.close(hdl, websocketpp::close::status::policy_violation, "Invalid token");
         }
         catch (const std::exception &e)
         {

@@ -31,6 +31,7 @@ include_directories(
     ${CMAKE_SOURCE_DIR}/third_party/jwt-cpp/include # jwt-cpp头文件目录
     ${CMAKE_SOURCE_DIR}/third_party/websocketpp # websocketpp头文件目录
     ${CMAKE_SOURCE_DIR}/third_party/nlohmann/single_include # nlohmann/json头文件目录
+    ${CMAKE_SOURCE_DIR}/third_party/Bcrypt/include # Bcrypt头文件目录
     ${SQLite3_INCLUDE_DIRS}        # SQLite3头文件目录
     ${OPENSSL_INCLUDE_DIR}         # OpenSSL头文件目录
 )

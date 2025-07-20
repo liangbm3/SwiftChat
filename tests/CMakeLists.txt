@@ -6,9 +6,23 @@ add_executable(test_user
     ../src/chat/user.cpp
 )
 
+# 创建消息测试可执行文件
+add_executable(test_message
+    chat/test_message.cpp
+    ../src/chat/message.cpp
+    ../src/chat/user.cpp
+)
+
+# 创建房间测试可执行文件
+add_executable(test_room
+    chat/test_room.cpp
+    ../src/chat/room.cpp
+)
+
 # 创建日志系统测试可执行文件
 add_executable(test_logger 
     utils/test_logger.cpp
+    ../src/utils/logger.cpp
 )
 
 
@@ -21,6 +35,8 @@ add_executable(test_database_manager
     ../src/db/room_repository.cpp
     ../src/db/message_repository.cpp
     ../src/chat/user.cpp
+    ../src/chat/room.cpp
+    ../src/chat/message.cpp
     ../src/utils/logger.cpp
 )
 
@@ -62,86 +78,99 @@ add_executable(test_websocket_basic
     websocket/test_websocket_basic.cpp
     ../src/websocket/websocket_server.cpp
     ../src/utils/logger.cpp
+    ../src/utils/jwt_utils.cpp
+    ../src/http/http_request.cpp
+    ../src/db/database_manager.cpp
+    ../src/db/database_connection.cpp
+    ../src/db/user_repository.cpp
+    ../src/db/room_repository.cpp
+    ../src/db/message_repository.cpp
+    ../src/chat/user.cpp
+    ../src/chat/room.cpp
+    ../src/chat/message.cpp
 )
-
-
-# # 创建认证工具测试可执行文件
-# add_executable(test_auth_utils
-#     utils/test_auth_utils.cpp
-#     ../src/utils/jwt.cpp
-#     ../src/utils/api_response.cpp
-#     ../src/utils/auth_middleware.cpp
-#     ../src/http/http_request.cpp
-#     ../src/http/http_response.cpp
-# )
 
 # 链接必要的库
 target_link_libraries(test_user 
     GTest::gtest
     GTest::gtest_main
-    ${CMAKE_THREAD_LIBS_INIT}# 链接线程库  
+    Threads::Threads # 链接线程库  
+)
+
+target_link_libraries(test_message
+    GTest::gtest
+    GTest::gtest_main
+    Threads::Threads
+)
+
+target_link_libraries(test_room
+    GTest::gtest
+    GTest::gtest_main
+    Threads::Threads
 )
 
 target_link_libraries(test_logger 
     GTest::gtest
     GTest::gtest_main
-    ${CMAKE_THREAD_LIBS_INIT}
+    Threads::Threads
 )
 
 target_link_libraries(test_database_manager 
     GTest::gtest
     GTest::gtest_main
     sqlite3
-    ${CMAKE_THREAD_LIBS_INIT}
+    Threads::Threads
 )
 
 target_link_libraries(test_thread_pool
     GTest::gtest
     GTest::gtest_main
-    ${CMAKE_THREAD_LIBS_INIT}
+    Threads::Threads
 )
 
 target_link_libraries(test_timer
     GTest::gtest
     GTest::gtest_main
-    ${CMAKE_THREAD_LIBS_INIT}
+    Threads::Threads
 )
 
 target_link_libraries(test_http_request
     GTest::gtest
     GTest::gtest_main
-    ${CMAKE_THREAD_LIBS_INIT}
+    Threads::Threads
 )
 
 target_link_libraries(test_http_response
     GTest::gtest
     GTest::gtest_main
-    ${CMAKE_THREAD_LIBS_INIT}
+    Threads::Threads
 )
 
 target_link_libraries(test_http_server
     GTest::gtest
     GTest::gtest_main
-    ${CMAKE_THREAD_LIBS_INIT}
+    Threads::Threads
 )
 
 target_link_libraries(test_websocket_basic
     GTest::gtest
     GTest::gtest_main
-    ${CMAKE_THREAD_LIBS_INIT}
+    Threads::Threads
     ${OPENSSL_LIBRARIES}
+    sqlite3
 )
 
-# target_link_libraries(test_auth_utils
-#     GTest::gtest
-#     GTest::gtest_main
-#     ${CMAKE_THREAD_LIBS_INIT}
-#     ssl
-#     crypto
-# )
 
 # 设置测试可执行文件的输出目录
 set_target_properties(test_user PROPERTIES
+    RUNTIME_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/tests
+)
+
+set_target_properties(test_message PROPERTIES
+    RUNTIME_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/tests
+)
+
+set_target_properties(test_room PROPERTIES
     RUNTIME_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/tests
 )
 
@@ -186,6 +215,18 @@ set_target_properties(test_websocket_basic PROPERTIES
 target_include_directories(test_user PRIVATE
     ${CMAKE_SOURCE_DIR}/src
     ${CMAKE_SOURCE_DIR}/third_party
+)
+
+target_include_directories(test_message PRIVATE
+    ${CMAKE_SOURCE_DIR}/src
+    ${CMAKE_SOURCE_DIR}/third_party
+    ${CMAKE_SOURCE_DIR}/third_party/nlohmann
+)
+
+target_include_directories(test_room PRIVATE
+    ${CMAKE_SOURCE_DIR}/src
+    ${CMAKE_SOURCE_DIR}/third_party
+    ${CMAKE_SOURCE_DIR}/third_party/nlohmann
 )
 
 target_include_directories(test_logger PRIVATE
@@ -245,6 +286,8 @@ target_include_directories(test_websocket_basic PRIVATE
 # 如果使用CTest，可以添加测试
 enable_testing()
 add_test(NAME UserTests COMMAND test_user)
+add_test(NAME MessageTests COMMAND test_message)
+add_test(NAME RoomTests COMMAND test_room)
 add_test(NAME LoggerTests COMMAND test_logger)
 add_test(NAME DatabaseManagerTests COMMAND test_database_manager)
 add_test(NAME ThreadPoolTests COMMAND test_thread_pool)
