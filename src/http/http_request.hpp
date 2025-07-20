@@ -51,6 +51,12 @@ namespace http
 
         const std::unordered_map<std::string, std::string>& getQueryParams() const { return query_params_; }
 
+        // 路径参数相关方法
+        bool hasPathParam(const std::string& key) const;// 检查是否有指定的路径参数
+        std::optional<std::string_view> getPathParam(const std::string& key) const;// 获取指定路径参数的值
+        const std::unordered_map<std::string, std::string>& getPathParams() const { return path_params_; }
+        void setPathParams(const std::unordered_map<std::string, std::string>& params) { path_params_ = params; }
+
     private:
         HttpRequest() = default; // 构造函数私有化，强制使用静态的parse方法创建对象
         void parseQueryParams(const std::string& query_str); //解析url查询字符串
@@ -62,6 +68,7 @@ namespace http
         std::string body_;                                          // 请求体内容
         std::unordered_map<std::string, std::string, CaseInsensitiveHasher, CaseInsensitiveEqual> headers_;// 请求头映射，忽略大小写
         std::unordered_map<std::string, std::string> query_params_;// 查询参数映射
+        std::unordered_map<std::string, std::string> path_params_;// 路径参数映射
         std::unordered_map<std::string, std::string> cookies_;//cookie映射
     };
 }

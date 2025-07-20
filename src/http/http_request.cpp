@@ -233,4 +233,20 @@ namespace http
         }
         return decoded_str;
     }
+
+    // 路径参数相关方法实现
+    bool HttpRequest::hasPathParam(const std::string& key) const
+    {
+        return path_params_.find(key) != path_params_.end();
+    }
+
+    std::optional<std::string_view> HttpRequest::getPathParam(const std::string& key) const
+    {
+        auto it = path_params_.find(key);
+        if (it != path_params_.end())
+        {
+            return std::string_view(it->second);
+        }
+        return std::nullopt;
+    }
 }
