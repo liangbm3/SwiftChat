@@ -172,7 +172,7 @@ std::optional<nlohmann::json> RoomRepository::getRoomById(const std::string &roo
 
         // 使用nlohmann::json构造房间信息
         nlohmann::json room_json = {
-            {"roomid", reinterpret_cast<const char*>(id_col)},
+            {"id", reinterpret_cast<const char*>(id_col)},
             {"name", reinterpret_cast<const char*>(name_col)},
             {"description", desc_col ? reinterpret_cast<const char*>(desc_col) : ""}, // 处理description可能为NULL的情况
             {"creator_id", reinterpret_cast<const char*>(creator_id_col)},
