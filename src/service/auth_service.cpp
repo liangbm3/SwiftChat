@@ -1,4 +1,5 @@
 #include "service/auth_service.hpp"
+#include "service/user_status_manager.hpp"
 #include "db/database_manager.hpp"
 #include "http/http_server.hpp"
 #include "http/http_request.hpp"
@@ -12,6 +13,11 @@
 using json = nlohmann::json;
 
 AuthService::AuthService(DatabaseManager &db_manager) : db_manager_(db_manager) {}
+
+void AuthService::setStatusManager(std::shared_ptr<UserStatusManager> status_manager)
+{
+    status_manager_ = status_manager;
+}
 
 void AuthService::registerRoutes(http::HttpServer &server)
 {
@@ -34,6 +40,16 @@ void AuthService::registerRoutes(http::HttpServer &server)
         .use_auth_middleware = false // 登录不需要认证
     };
     server.addHandler(login_route);
+
+    http::HttpServer::Route logout_route{
+        .path = "/api/v1/auth/logout",
+        .method = "POST",
+        .handler = [this](const http::HttpRequest &request) -> http::HttpResponse {
+            return logoutUser(request);
+        },
+        .use_auth_middleware = true // 注销需要认证
+    };
+    server.addHandler(logout_route);
 }
 
 
@@ -96,8 +112,8 @@ http::HttpResponse AuthService::registerUser(const http::HttpRequest &request)
             return http::HttpResponse::InternalError().withJsonBody(error_response);
         }
 
-        // 生成 JWT 令牌
-        return createAndSignToken(*user);
+        // 生成 JWT 令牌 
+        return createAndSignToken(*user, true); // true表示这是注册操作
     }
     catch(const json::exception &e)
     {
@@ -168,7 +184,7 @@ http::HttpResponse AuthService::loginUser(const http::HttpRequest &request)
         }
 
         // 生成 JWT 令牌
-        return createAndSignToken(*user);
+        return createAndSignToken(*user, false); // false表示这是登录操作
     }
     catch(const json::exception &e)
     {
@@ -204,7 +220,7 @@ http::HttpResponse AuthService::loginUser(const http::HttpRequest &request)
     
 }
 
-http::HttpResponse AuthService::createAndSignToken(const User &user)
+http::HttpResponse AuthService::createAndSignToken(const User &user, bool is_registration)
 {
     //从环境变量中读取密钥
     const char *secret = std::getenv("JWT_SECRET");
@@ -230,16 +246,29 @@ http::HttpResponse AuthService::createAndSignToken(const User &user)
         .sign(jwt::algorithm::hs256{secret_key});//使用哈希算法HS256和密钥进行签名
     
     //构造HTTP响应
+    std::string success_message = is_registration ? "User registered successfully" : "Login successful";
     json response_json = {
         {"success", true},
-        {"message", "Authentication successful"},
+        {"message", success_message},
         {"data", {
             {"token", token},
-            {"user_id", user.getId()},
+            {"id", user.getId()},
             {"username", user.getUsername()}
         }}
     };
-    return http::HttpResponse::Ok().withJsonBody(response_json); // 返回200 OK响应，包含JSON格式的令牌和消息
+    
+    // 更新用户在线状态（登录或注册都视为上线）
+    if (status_manager_) {
+        status_manager_->userLogin(user.getUsername(), "http");
+        LOG_INFO << "Updated online status for user: " << user.getUsername();
+    }
+    
+    // 根据操作类型返回适当的状态码
+    if (is_registration) {
+        return http::HttpResponse::Created().withJsonBody(response_json); // 201 Created for registration
+    } else {
+        return http::HttpResponse::Ok().withJsonBody(response_json); // 200 OK for login
+    }
 }
 
 
@@ -248,4 +277,59 @@ std::string AuthService::hashPassword(const std::string &password)
     // 使用 bcrypt 或其他哈希算法对密码进行哈希
     // 这里可以使用第三方库如 bcryptcpp 或 OpenSSL
     return password + "_hashed";
+}
+
+http::HttpResponse AuthService::logoutUser(const http::HttpRequest &request)
+{
+    try
+    {
+        // 从请求头中获取用户名（应该由中间件设置）
+        auto username_header = request.getHeaderValue("X-Username");
+        if (!username_header) {
+            LOG_ERROR << "Username not found in request headers";
+            json error_response = {
+                {"success", false},
+                {"message", "Authentication required"},
+                {"error", "Username not found"}
+            };
+            return http::HttpResponse::Unauthorized().withJsonBody(error_response);
+        }
+        std::string username = std::string(*username_header);
+
+        // 更新用户离线状态
+        if (status_manager_) {
+            status_manager_->userLogout(username);
+            LOG_INFO << "Updated offline status for user: " << username;
+        }
+
+        json response_json = {
+            {"success", true},
+            {"message", "Logout successful"},
+            {"data", {
+                {"username", username}
+            }}
+        };
+        
+        return http::HttpResponse::Ok().withJsonBody(response_json);
+    }
+    catch(const std::exception &e)
+    {
+        LOG_ERROR << "Exception during user logout: " << e.what();
+        json error_response = {
+            {"success", false},
+            {"message", "Internal server error"},
+            {"error", e.what()}
+        };
+        return http::HttpResponse::InternalError().withJsonBody(error_response);
+    }
+    catch(...)
+    {
+        LOG_ERROR << "Unknown exception during user logout";
+        json error_response = {
+            {"success", false},
+            {"message", "Unknown error occurred"},
+            {"error", "Unknown exception"}
+        };
+        return http::HttpResponse::InternalError().withJsonBody(error_response);
+    }
 }
