@@ -40,16 +40,6 @@ bool DatabaseManager::setUserOnlineStatus(const std::string &user_id, bool is_on
     return user_repo_ ? user_repo_->setUserOnlineStatus(user_id, is_online) : false;
 }
 
-bool DatabaseManager::updateUserLastActiveTime(const std::string &user_id)
-{
-    return user_repo_ ? user_repo_->updateUserLastActiveTime(user_id) : false;
-}
-
-bool DatabaseManager::checkAndUpdateInactiveUsers(int64_t timeout_ms)
-{
-    return user_repo_ ? user_repo_->checkAndUpdateInactiveUsers(timeout_ms) : false;
-}
-
 std::vector<User> DatabaseManager::getAllUsers()
 {
     return user_repo_ ? user_repo_->getAllUsers() : std::vector<User>();

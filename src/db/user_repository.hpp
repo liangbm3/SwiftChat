@@ -19,8 +19,6 @@ public:
 
     // 用户状态管理
     bool setUserOnlineStatus(const std::string &user_id, bool is_online);// 根据ID设置用户在线状态
-    bool updateUserLastActiveTime(const std::string &user_id);// 根据ID更新用户最后活跃时间
-    bool checkAndUpdateInactiveUsers(int64_t timeout_ms);// 检查并更新不活跃用户
     
     // 用户查询
     std::vector<User> getAllUsers() const;// 获取所有用户
