@@ -8,6 +8,7 @@
 #include <nlohmann/json.hpp>
 #include <cstdlib>
 #include <optional>
+#include <chrono>
 
 using json = nlohmann::json;
 
@@ -47,19 +48,19 @@ void RoomService::registerRoutes(http::HttpServer &server)
         .use_auth_middleware = true
     });
 
-    // 注册删除房间的路由
+    // 注册更改房间描述的路由
     server.addHandler({
-        .path = "/api/v1/rooms/delete",
-        .method = "DELETE",
-        .handler = [this](const http::HttpRequest &request) { return handleDeleteRoom(request); },
+        .path = "/api/v1/rooms/{room_id}",
+        .method = "PATCH",
+        .handler = [this](const http::HttpRequest &request) { return handleUpdateRoomDescription(request); },
         .use_auth_middleware = true
     });
 
-    // 注册更改房间描述的路由
+    // 注册删除房间的路由
     server.addHandler({
-        .path = "/api/v1/rooms/description",
-        .method = "PUT",
-        .handler = [this](const http::HttpRequest &request) { return handleUpdateRoomDescription(request); },
+        .path = "/api/v1/rooms/{room_id}",
+        .method = "DELETE",
+        .handler = [this](const http::HttpRequest &request) { return handleDeleteRoom(request); },
         .use_auth_middleware = true
     });
 }
@@ -252,12 +253,18 @@ http::HttpResponse RoomService::handleJoinRoom(const http::HttpRequest &request)
 
         // 成功加入房间
         LOG_INFO << "User " << user_id << " successfully joined room " << room_id;
+        
+        // 获取当前时间戳
+        auto now = std::chrono::system_clock::now();
+        auto timestamp = std::chrono::duration_cast<std::chrono::seconds>(now.time_since_epoch()).count();
+        
         json response_data = {
             {"success", true},
-            {"message", "Successfully joined room"},
+            {"message", "Room joined successfully"},
             {"data", {
                 {"room_id", room_id},
-                {"user_id", user_id}
+                {"user_id", user_id},
+                {"joined_at", timestamp}
             }}
         };
         return http::HttpResponse::Ok().withJsonBody(response_data);
@@ -298,7 +305,60 @@ http::HttpResponse RoomService::handleGetRooms(const http::HttpRequest &request)
 {
     try
     {
-        auto rooms = db_manager_.getAllRooms();
+        // 获取查询参数
+        int limit = 50; // 默认限制
+        int offset = 0; // 默认偏移量
+
+        if (auto limit_opt = request.getQueryParam("limit"))
+        {
+            try
+            {
+                std::string limit_str(limit_opt->data(), limit_opt->size());
+                limit = std::stoi(limit_str);
+                if (limit <= 0 || limit > 100) // 限制在1到100之间
+                {
+                    LOG_WARN << "Invalid limit value: " << limit << ". Using default value of 50.";
+                    limit = 50;
+                }
+            }
+            catch (const std::exception& e)
+            {
+                LOG_ERROR << "Invalid limit parameter. Using default value of 50.";
+                limit = 50;
+            }
+        }
+
+        if (auto offset_opt = request.getQueryParam("offset"))
+        {
+            try
+            {
+                std::string offset_str(offset_opt->data(), offset_opt->size());
+                offset = std::stoi(offset_str);
+                if (offset < 0)
+                {
+                    LOG_WARN << "Invalid offset value: " << offset << ". Using default value of 0.";
+                    offset = 0;
+                }
+            }
+            catch (const std::exception& e)
+            {
+                LOG_ERROR << "Invalid offset parameter. Using default value of 0.";
+                offset = 0;
+            }
+        }
+
+        // 从数据库获取所有房间
+        auto all_rooms = db_manager_.getAllRooms();
+        
+        // 在服务层实现分页逻辑
+        size_t total_count = all_rooms.size();
+        size_t start_index = std::min(static_cast<size_t>(offset), total_count);
+        size_t end_index = std::min(start_index + static_cast<size_t>(limit), total_count);
+        
+        std::vector<Room> rooms;
+        if (start_index < total_count) {
+            rooms.assign(all_rooms.begin() + start_index, all_rooms.begin() + end_index);
+        }
         
         // 将Room对象转换为JSON数组，并添加成员数量
         json rooms_json = json::array();
@@ -315,10 +375,13 @@ http::HttpResponse RoomService::handleGetRooms(const http::HttpRequest &request)
         // 构造标准的JSON响应格式
         json json_response = {
             {"success", true},
-            {"message", "Successfully retrieved rooms"},
+            {"message", "Rooms retrieved successfully"},
             {"data", {
                 {"rooms", rooms_json},
-                {"count", rooms.size()}
+                {"count", rooms.size()},
+                {"total", total_count},
+                {"limit", limit},
+                {"offset", offset}
             }}
         };
         
@@ -389,7 +452,7 @@ http::HttpResponse RoomService::handleLeaveRoom(const http::HttpRequest &request
         LOG_INFO << "User " << user_id << " successfully left room " << room_id;
         json response_data = {
             {"success", true},
-            {"message", "Successfully left room"},
+            {"message", "Room left successfully"},
             {"data", {
                 {"room_id", room_id},
                 {"user_id", user_id}
@@ -448,9 +511,20 @@ http::HttpResponse RoomService::handleDeleteRoom(const http::HttpRequest &reques
 
     try
     {
-        // 从请求体中获取房间ID
-        auto json_body = json::parse(request.getBody());
-        std::string room_id = json_body.at("room_id").get<std::string>();
+        // 从路径参数中获取房间ID
+        auto room_id_opt = request.getPathParam("room_id");
+        if (!room_id_opt)
+        {
+            LOG_ERROR << "Missing room_id path parameter";
+            json error_response = {
+                {"success", false},
+                {"message", "Room ID is required"},
+                {"error", "Missing room_id path parameter"}
+            };
+            return http::HttpResponse::BadRequest().withJsonBody(error_response);
+        }
+        
+        std::string room_id = std::string(*room_id_opt);
         
         // 检查房间是否存在
         if (!db_manager_.roomExists(room_id))
@@ -501,26 +575,6 @@ http::HttpResponse RoomService::handleDeleteRoom(const http::HttpRequest &reques
         };
         return http::HttpResponse::Ok().withJsonBody(response_data);
     }
-    catch(const json::parse_error &e)
-    {
-        LOG_ERROR << "Failed to parse JSON body: " << e.what();
-        json error_response = {
-            {"success", false},
-            {"message", "Invalid JSON format"},
-            {"error", e.what()}
-        };
-        return http::HttpResponse::BadRequest().withJsonBody(error_response);
-    }
-    catch(const json::out_of_range &e)
-    {
-        LOG_ERROR << "Missing required fields in JSON body: " << e.what();
-        json error_response = {
-            {"success", false},
-            {"message", "Missing required fields"},
-            {"error", e.what()}
-        };
-        return http::HttpResponse::BadRequest().withJsonBody(error_response);
-    }
     catch(const std::exception& e)
     {
         LOG_ERROR << "Failed to delete room, Error: " << e.what();
@@ -552,9 +606,23 @@ http::HttpResponse RoomService::handleUpdateRoomDescription(const http::HttpRequ
 
     try
     {
-        // 从请求体中获取房间ID和新描述
+        // 从路径参数中获取房间ID
+        auto room_id_opt = request.getPathParam("room_id");
+        if (!room_id_opt)
+        {
+            LOG_ERROR << "Missing room_id path parameter";
+            json error_response = {
+                {"success", false},
+                {"message", "Room ID is required"},
+                {"error", "Missing room_id path parameter"}
+            };
+            return http::HttpResponse::BadRequest().withJsonBody(error_response);
+        }
+        
+        std::string room_id = std::string(*room_id_opt);
+        
+        // 从请求体中获取新描述
         auto json_body = json::parse(request.getBody());
-        std::string room_id = json_body.at("room_id").get<std::string>();
         std::string new_description = json_body.at("description").get<std::string>();
         
         // 检查房间是否存在
@@ -637,7 +705,7 @@ http::HttpResponse RoomService::handleUpdateRoomDescription(const http::HttpRequ
         LOG_ERROR << "Missing required fields in JSON body: " << e.what();
         json error_response = {
             {"success", false},
-            {"message", "Missing required fields"},
+            {"message", "Missing required fields (description is required)"},
             {"error", e.what()}
         };
         return http::HttpResponse::BadRequest().withJsonBody(error_response);
