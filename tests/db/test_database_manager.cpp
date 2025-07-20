@@ -134,11 +134,11 @@ TEST_F(DatabaseManagerTest, SaveAndGetMessages) {
     auto messages = db_manager_->getMessages(room_id, 10); // Limit to 10
     ASSERT_EQ(messages.size(), 2);
 
-    ASSERT_EQ(messages[0].at("sender").at("id").get<std::string>(), u1.getId());
-    ASSERT_EQ(messages[0].at("content").get<std::string>(), "Hello from u1!");
+    ASSERT_EQ(messages[0].getSender().getId(), u1.getId());
+    ASSERT_EQ(messages[0].getContent(), "Hello from u1!");
 
-    ASSERT_EQ(messages[1].at("sender").at("id").get<std::string>(), u2.getId());
-    ASSERT_EQ(messages[1].at("content").get<std::string>(), "Hello from u2!");
+    ASSERT_EQ(messages[1].getSender().getId(), u2.getId());
+    ASSERT_EQ(messages[1].getContent(), "Hello from u2!");
 }
 
 // --- 完整的端到端流程测试 ---
@@ -163,7 +163,7 @@ TEST_F(DatabaseManagerTest, FullWorkflow) {
     // 5. admin获取消息并验证
     auto messages = db_manager_->getMessages(room_id);
     ASSERT_EQ(messages.size(), 1);
-    ASSERT_EQ(messages[0].at("sender").at("id").get<std::string>(), guest.getId());
+    ASSERT_EQ(messages[0].getSender().getId(), guest.getId());
 
     // 6. admin移除guest
     ASSERT_TRUE(db_manager_->removeRoomMember(room_id, guest.getId()));

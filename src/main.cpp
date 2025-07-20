@@ -64,7 +64,7 @@ int main(int argc, char *argv[])
         LOG_INFO << "All services registered successfully";
 
         // 创建并启动WebSocket服务器
-        ws_server = std::make_unique<WebSocketServer>();
+        ws_server = std::make_unique<WebSocketServer>(db_manager);
         LOG_INFO << "WebSocket server created";
 
         // 健康检查接口

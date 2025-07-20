@@ -151,11 +151,19 @@ http::HttpResponse MessageService::getMessages(const http::HttpRequest &request)
     try
     {
         auto messages = db_manager_.getMessages(room_id, limit);
+        
+        // 将 Message 对象转换为 JSON
+        json message_json_array = json::array();
+        for (const auto& message : messages)
+        {
+            message_json_array.push_back(message.toJson());
+        }
+        
         json response_data = {
             {"success", true},
             {"message", "Messages retrieved successfully"},
             {"data", {
-                {"messages", messages},
+                {"messages", message_json_array},
                 {"room_id", room_id},
                 {"count", messages.size()}
             }}

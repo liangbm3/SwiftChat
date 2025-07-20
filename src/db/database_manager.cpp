@@ -130,10 +130,15 @@ bool DatabaseManager::saveMessage(const std::string &room_id, const std::string 
     return message_repo_ ? message_repo_->saveMessage(room_id, user_id, content, timestamp) : false;
 }
 
-std::vector<nlohmann::json> DatabaseManager::getMessages(const std::string &room_id, int limit,
-                                                          int64_t before_timestamp)
+std::vector<Message> DatabaseManager::getMessages(const std::string &room_id, int limit,
+                                                  int64_t before_timestamp)
 {
-    return message_repo_ ? message_repo_->getMessages(room_id, limit, before_timestamp) : std::vector<nlohmann::json>();
+    return message_repo_ ? message_repo_->getMessages(room_id, limit, before_timestamp) : std::vector<Message>();
+}
+
+std::optional<Message> DatabaseManager::getMessageById(int64_t message_id)
+{
+    return message_repo_ ? message_repo_->getMessageById(message_id) : std::nullopt;
 }
 
 std::vector<Room> DatabaseManager::getAllRooms()

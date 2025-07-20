@@ -8,6 +8,7 @@
 #include "message_repository.hpp"
 #include "../chat/user.hpp"
 #include "../chat/room.hpp"
+#include "../chat/message.hpp"
 
 // 重构后的数据库管理类 - 作为各个仓库的组合
 class DatabaseManager
@@ -49,8 +50,9 @@ public:
     // 消息操作代理
     bool saveMessage(const std::string &room_id, const std::string &user_id,
                      const std::string &content, int64_t timestamp);
-    std::vector<nlohmann::json> getMessages(const std::string &room_id, int limit = 50,
-                                            int64_t before_timestamp = 0);
+    std::vector<Message> getMessages(const std::string &room_id, int limit = 50,
+                                     int64_t before_timestamp = 0);
+    std::optional<Message> getMessageById(int64_t message_id);
 
     // 获取各个仓库的直接访问（如果需要更复杂的操作）
     UserRepository* getUserRepository() { return user_repo_.get(); }
