@@ -3,13 +3,12 @@
 
 // 测试User对象的基本功能
 TEST(UserTest, BasicFunctionality) {
-    User user("123", "testuser", "testpass", true, 1234567890);
+    User user("123", "testuser", "testpass", true);
     
     EXPECT_EQ(user.getId(), "123");
     EXPECT_EQ(user.getUsername(), "testuser");
     EXPECT_EQ(user.getPassword(), "testpass");
     EXPECT_TRUE(user.isOnline());
-    EXPECT_EQ(user.getLastActiveTime(), 1234567890);
 }
 
 // 测试User的setter方法
@@ -20,18 +19,16 @@ TEST(UserTest, SetterMethods) {
     user.setUsername("newuser");
     user.setPassword("newpass");
     user.setOnline(true);
-    user.setLastActiveTime(9876543210);
     
     EXPECT_EQ(user.getId(), "456");
     EXPECT_EQ(user.getUsername(), "newuser");
     EXPECT_EQ(user.getPassword(), "newpass");
     EXPECT_TRUE(user.isOnline());
-    EXPECT_EQ(user.getLastActiveTime(), 9876543210);
 }
 
 // 测试User对象转JSON
 TEST(UserTest, ToJson) {
-    User user("789", "jsonuser", "jsonpass", false, 1111111111);
+    User user("789", "jsonuser", "jsonpass", false);
     
     json j = user.toJson();
     
@@ -39,7 +36,6 @@ TEST(UserTest, ToJson) {
     EXPECT_EQ(j["username"], "jsonuser");
     EXPECT_EQ(j["password"], "jsonpass");
     EXPECT_EQ(j["is_online"], false);
-    EXPECT_EQ(j["last_active_time"], 1111111111);
 }
 
 // 测试从JSON创建User对象
@@ -49,7 +45,6 @@ TEST(UserTest, FromJson) {
     j["username"] = "fromjsonuser";
     j["password"] = "fromjsonpass";
     j["is_online"] = true;
-    j["last_active_time"] = 2222222222;
     
     User user = User::fromJson(j);
     
@@ -57,12 +52,11 @@ TEST(UserTest, FromJson) {
     EXPECT_EQ(user.getUsername(), "fromjsonuser");
     EXPECT_EQ(user.getPassword(), "fromjsonpass");
     EXPECT_TRUE(user.isOnline());
-    EXPECT_EQ(user.getLastActiveTime(), 2222222222);
 }
 
 // 测试JSON往返转换
 TEST(UserTest, JsonRoundTrip) {
-    User originalUser("round123", "roundtripuser", "complexpass!@#", true, 3333333333);
+    User originalUser("round123", "roundtripuser", "complexpass!@#", true);
     
     // 转换为JSON再转回User
     json j = originalUser.toJson();
@@ -73,13 +67,14 @@ TEST(UserTest, JsonRoundTrip) {
     EXPECT_EQ(originalUser.getUsername(), reconstructedUser.getUsername());
     EXPECT_EQ(originalUser.getPassword(), reconstructedUser.getPassword());
     EXPECT_EQ(originalUser.isOnline(), reconstructedUser.isOnline());
-    EXPECT_EQ(originalUser.getLastActiveTime(), reconstructedUser.getLastActiveTime());
+    EXPECT_EQ(originalUser.getPassword(), reconstructedUser.getPassword());
+    EXPECT_EQ(originalUser.isOnline(), reconstructedUser.isOnline());
 }
 
 // 测试边界情况
 TEST(UserTest, EdgeCases) {
     // 测试空字符串
-    User emptyUser("", "", "", false, 0);
+    User emptyUser("", "", "", false);
     json j = emptyUser.toJson();
     User reconstructed = User::fromJson(j);
     
@@ -87,11 +82,10 @@ TEST(UserTest, EdgeCases) {
     EXPECT_EQ(reconstructed.getUsername(), "");
     EXPECT_EQ(reconstructed.getPassword(), "");
     EXPECT_FALSE(reconstructed.isOnline());
-    EXPECT_EQ(reconstructed.getLastActiveTime(), 0);
     
     // 测试长字符串
     std::string longString(1000, 'a');
-    User longUser("longid", longString, longString, true, 4444444444);
+    User longUser("longid", longString, longString, true);
     json longJson = longUser.toJson();
     User longReconstructed = User::fromJson(longJson);
     
@@ -101,7 +95,7 @@ TEST(UserTest, EdgeCases) {
 
 // 测试特殊字符
 TEST(UserTest, SpecialCharacters) {
-    User specialUser("special", "用户名测试", "密码测试🔐", true, 5555555555);
+    User specialUser("special", "用户名测试", "密码测试🔐", true);
     
     json j = specialUser.toJson();
     User reconstructed = User::fromJson(j);
