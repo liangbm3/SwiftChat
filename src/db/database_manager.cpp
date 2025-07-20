@@ -62,7 +62,7 @@ std::string DatabaseManager::generateUserId()
 }
 
 // 房间操作代理
-std::optional<nlohmann::json> DatabaseManager::createRoom(const std::string &name, const std::string &creator_id)
+std::optional<Room> DatabaseManager::createRoom(const std::string &name, const std::string &creator_id)
 {
     return room_repo_ ? room_repo_->createRoom(name, creator_id) : std::nullopt;
 }
@@ -82,7 +82,7 @@ std::vector<std::string> DatabaseManager::getRooms()
     return room_repo_ ? room_repo_->getRooms() : std::vector<std::string>();
 }
 
-std::optional<nlohmann::json> DatabaseManager::getRoomById(const std::string &room_id) const
+std::optional<Room> DatabaseManager::getRoomById(const std::string &room_id) const
 {
     return room_repo_ ? room_repo_->getRoomById(room_id) : std::nullopt;
 }
@@ -136,7 +136,7 @@ std::vector<nlohmann::json> DatabaseManager::getMessages(const std::string &room
     return message_repo_ ? message_repo_->getMessages(room_id, limit, before_timestamp) : std::vector<nlohmann::json>();
 }
 
-std::vector<nlohmann::json> DatabaseManager::getAllRooms()
+std::vector<Room> DatabaseManager::getAllRooms()
 {
-    return room_repo_ ? room_repo_->getAllRooms() : std::vector<nlohmann::json>();
+    return room_repo_ ? room_repo_->getAllRooms() : std::vector<Room>();
 }

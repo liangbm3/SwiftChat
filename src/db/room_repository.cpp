@@ -6,7 +6,7 @@
 
 RoomRepository::RoomRepository(DatabaseConnection* db_conn) : db_conn_(db_conn) {}
 
-std::optional<nlohmann::json> RoomRepository::createRoom(const std::string &name, const std::string &creator_id) {
+std::optional<Room> RoomRepository::createRoom(const std::string &name, const std::string &creator_id) {
     if (!db_conn_ || !db_conn_->isConnected()) {
         return std::nullopt;
     }
@@ -16,7 +16,9 @@ std::optional<nlohmann::json> RoomRepository::createRoom(const std::string &name
     // 1. 生成一个新的、唯一的房间ID
     std::string room_id = generateRoomId();
 
-    const char *sql = "INSERT INTO rooms (id, name, creator_id, created_at) VALUES (?, ?, ?, ?);";
+    LOG_INFO << "createRoom: room_id=" << room_id << ", name=" << name << ", creator_id=" << creator_id;
+
+    const char *sql = "INSERT INTO rooms (id, name, description, creator_id, created_at) VALUES (?, ?, ?, ?, ?);";
     sqlite3_stmt *stmt;
 
     if (sqlite3_prepare_v2(db_conn_->getDb(), sql, -1, &stmt, nullptr) != SQLITE_OK) {
@@ -26,15 +28,22 @@ std::optional<nlohmann::json> RoomRepository::createRoom(const std::string &name
 
     sqlite3_bind_text(stmt, 1, room_id.c_str(), -1, SQLITE_STATIC);
     sqlite3_bind_text(stmt, 2, name.c_str(), -1, SQLITE_STATIC);
-    sqlite3_bind_text(stmt, 3, creator_id.c_str(), -1, SQLITE_STATIC);
-    sqlite3_bind_int64(stmt, 4, std::chrono::system_clock::now().time_since_epoch().count());
+    sqlite3_bind_text(stmt, 3, "", -1, SQLITE_STATIC); // 默认空描述
+    sqlite3_bind_text(stmt, 4, creator_id.c_str(), -1, SQLITE_STATIC);
+    sqlite3_bind_int64(stmt, 5, std::chrono::system_clock::now().time_since_epoch().count());
 
     bool success = (sqlite3_step(stmt) == SQLITE_DONE);
     sqlite3_finalize(stmt);
 
     if (success) {
         // 2. 如果插入成功，立即用ID把这个新房间查出来并返回
-        return getRoomById(room_id);
+        auto result = getRoomById(room_id);
+        if (result.has_value()) {
+            LOG_INFO << "createRoom success, returning: " << result.value().toJson().dump();
+        } else {
+            LOG_ERROR << "createRoom: getRoomById failed for room_id: " << room_id;
+        }
+        return result;
     } else {
         // 3. 如果插入失败（比如房间名重复），则返回空
         LOG_ERROR << "Failed to execute statement for createRoom, possibly due to duplicate name.";
@@ -136,7 +145,7 @@ std::vector<std::string> RoomRepository::getRooms()
     return rooms;
 }
 
-std::optional<nlohmann::json> RoomRepository::getRoomById(const std::string &room_id) const
+std::optional<Room> RoomRepository::getRoomById(const std::string &room_id) const
 {
     // 1. 检查数据库连接
     if (!db_conn_ || !db_conn_->isConnected())
@@ -170,18 +179,25 @@ std::optional<nlohmann::json> RoomRepository::getRoomById(const std::string &roo
         const unsigned char* creator_id_col = sqlite3_column_text(stmt, 3);
         int64_t created_at_col = sqlite3_column_int64(stmt, 4);
 
-        // 使用nlohmann::json构造房间信息
-        nlohmann::json room_json = {
-            {"id", reinterpret_cast<const char*>(id_col)},
-            {"name", reinterpret_cast<const char*>(name_col)},
-            {"description", desc_col ? reinterpret_cast<const char*>(desc_col) : ""}, // 处理description可能为NULL的情况
-            {"creator_id", reinterpret_cast<const char*>(creator_id_col)},
-            {"created_at", created_at_col}
-        };
+        LOG_INFO << "getRoomById: id=" << (id_col ? (const char*)id_col : "NULL") 
+                 << ", name=" << (name_col ? (const char*)name_col : "NULL")
+                 << ", desc=" << (desc_col ? (const char*)desc_col : "NULL")
+                 << ", creator=" << (creator_id_col ? (const char*)creator_id_col : "NULL");
+
+        // 创建Room对象
+        Room room(
+            reinterpret_cast<const char*>(id_col),
+            reinterpret_cast<const char*>(name_col),
+            desc_col ? reinterpret_cast<const char*>(desc_col) : "",
+            reinterpret_cast<const char*>(creator_id_col),
+            created_at_col
+        );
+
+        LOG_INFO << "getRoomById constructed Room: " << room.toJson().dump();
 
         // 6. 释放语句句柄并返回结果
         sqlite3_finalize(stmt);
-        return room_json; // C++会自动将 room_json 包装在 std::optional 中
+        return room; // C++会自动将 room 包装在 std::optional 中
     }
     else
     {
@@ -375,14 +391,13 @@ std::optional<std::string> RoomRepository::getRoomIdByName(const std::string &ro
     }
 }
 
-std::vector<nlohmann::json> RoomRepository::getAllRooms()
+std::vector<Room> RoomRepository::getAllRooms()
 {
-    std::vector<nlohmann::json> rooms;
+    std::vector<Room> rooms;
     if (!db_conn_->isConnected()) return rooms;
     
     std::lock_guard<std::recursive_mutex> lock(db_conn_->getMutex());
-    const char *sql = "SELECT id, name, description, creator_id, created_at, "
-                      "(SELECT COUNT(*) FROM room_members WHERE room_id = rooms.id) as member_count "
+    const char *sql = "SELECT id, name, description, creator_id, created_at "
                       "FROM rooms ORDER BY created_at DESC;";
     sqlite3_stmt *stmt;
 
@@ -394,14 +409,13 @@ std::vector<nlohmann::json> RoomRepository::getAllRooms()
 
     while (sqlite3_step(stmt) == SQLITE_ROW)
     {
-        nlohmann::json room = {
-            {"id", reinterpret_cast<const char *>(sqlite3_column_text(stmt, 0))},
-            {"name", reinterpret_cast<const char *>(sqlite3_column_text(stmt, 1))},
-            {"description", reinterpret_cast<const char *>(sqlite3_column_text(stmt, 2))},
-            {"creator_id", reinterpret_cast<const char *>(sqlite3_column_text(stmt, 3))},
-            {"created_at", sqlite3_column_int64(stmt, 4)},
-            {"member_count", sqlite3_column_int(stmt, 5)}
-        };
+        Room room(
+            reinterpret_cast<const char *>(sqlite3_column_text(stmt, 0)),
+            reinterpret_cast<const char *>(sqlite3_column_text(stmt, 1)),
+            reinterpret_cast<const char *>(sqlite3_column_text(stmt, 2)),
+            reinterpret_cast<const char *>(sqlite3_column_text(stmt, 3)),
+            sqlite3_column_int64(stmt, 4)
+        );
         rooms.push_back(room);
     }
 

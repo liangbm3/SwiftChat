@@ -6,6 +6,8 @@
 #include "user_repository.hpp"
 #include "room_repository.hpp"
 #include "message_repository.hpp"
+#include "../chat/user.hpp"
+#include "../chat/room.hpp"
 
 // 重构后的数据库管理类 - 作为各个仓库的组合
 class DatabaseManager
@@ -28,12 +30,12 @@ public:
     std::string generateUserId();
 
     // 房间操作代理
-    std::optional<nlohmann::json> createRoom(const std::string &name, const std::string &creator_id);
+    std::optional<Room> createRoom(const std::string &name, const std::string &creator_id);
     bool deleteRoom(const std::string &room_id);
     bool roomExists(const std::string &room_id);
     std::vector<std::string> getRooms();
-    std::vector<nlohmann::json> getAllRooms();
-    std::optional<nlohmann::json> getRoomById(const std::string &room_id) const;
+    std::vector<Room> getAllRooms();
+    std::optional<Room> getRoomById(const std::string &room_id) const;
     std::optional<std::string> getRoomIdByName(const std::string &room_name) const;
     std::string generateRoomId();
     bool updateRoom(const std::string &room_id, const std::string &name, const std::string &description);
