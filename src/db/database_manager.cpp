@@ -62,9 +62,9 @@ std::string DatabaseManager::generateUserId()
 }
 
 // 房间操作代理
-std::optional<Room> DatabaseManager::createRoom(const std::string &name, const std::string &creator_id)
+std::optional<Room> DatabaseManager::createRoom(const std::string &name, const std::string &description, const std::string &creator_id)
 {
-    return room_repo_ ? room_repo_->createRoom(name, creator_id) : std::nullopt;
+    return room_repo_ ? room_repo_->createRoom(name, description, creator_id) : std::nullopt;
 }
 
 bool DatabaseManager::deleteRoom(const std::string &room_id)

@@ -30,7 +30,7 @@ public:
     std::string generateUserId();
 
     // 房间操作代理
-    std::optional<Room> createRoom(const std::string &name, const std::string &creator_id);
+    std::optional<Room> createRoom(const std::string &name, const std::string &description, const std::string &creator_id);
     bool deleteRoom(const std::string &room_id);
     bool roomExists(const std::string &room_id);
     std::vector<std::string> getRooms();
