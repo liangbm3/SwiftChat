@@ -14,6 +14,7 @@
 #include <ctime>
 #include <cstdlib>
 
+
 std::atomic<bool> running(true);
 std::unique_ptr<WebSocketServer> ws_server;
 
@@ -170,8 +171,15 @@ int main(int argc, char *argv[])
         std::thread websocket_thread([&]()
                                      {
                                          LOG_INFO << "WebSocket server thread starting...";
-                                         ws_server->run(8081); // WebSocket运行在8081端口
+                                         try {
+                                             ws_server->run(8081); // WebSocket运行在8081端口
+                                         } catch (const std::exception& e) {
+                                             LOG_ERROR << "WebSocket server failed to start: " << e.what();
+                                         }
                                      });
+
+        // 给WebSocket服务器一些时间来启动
+        std::this_thread::sleep_for(std::chrono::milliseconds(100));
 
         std::cout << "HTTP服务器已启动: http://localhost:8080" << std::endl;
         std::cout << "WebSocket服务器已启动: ws://localhost:8081" << std::endl;
