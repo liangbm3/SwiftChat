@@ -78,7 +78,7 @@ TEST_F(DatabaseManagerTest, RoomAndMemberLifecycle) {
     // 2. 创建房间，直接获取返回的房间信息和ID
     auto room_opt = db_manager_->createRoom("Tech Talk", owner.getId());
     ASSERT_TRUE(room_opt.has_value());
-    std::string room_id = room_opt->at("id").get<std::string>();
+    std::string room_id = room_opt->getId();
     
     // 3. 使用ID验证房间是否存在
     ASSERT_TRUE(db_manager_->roomExists(room_id));
@@ -120,7 +120,7 @@ TEST_F(DatabaseManagerTest, SaveAndGetMessages) {
     auto u1 = *db_manager_->getUserByUsername( (db_manager_->createUser("u1", "p1"), "u1") );
     auto u2 = *db_manager_->getUserByUsername( (db_manager_->createUser("u2", "p2"), "u2") );
     auto room_opt = db_manager_->createRoom("Gossip Channel", u1.getId());
-    std::string room_id = room_opt->at("id").get<std::string>();
+    std::string room_id = room_opt->getId();
     db_manager_->addRoomMember(room_id, u1.getId());
     db_manager_->addRoomMember(room_id, u2.getId());
 
@@ -151,7 +151,7 @@ TEST_F(DatabaseManagerTest, FullWorkflow) {
     // 2. 创建房间
     auto room_opt = db_manager_->createRoom("Project Omega", admin.getId());
     ASSERT_TRUE(room_opt.has_value());
-    std::string room_id = room_opt->at("id").get<std::string>();
+    std::string room_id = room_opt->getId();
 
     // 3. 添加成员
     ASSERT_TRUE(db_manager_->addRoomMember(room_id, admin.getId()));
