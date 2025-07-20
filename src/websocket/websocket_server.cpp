@@ -1,4 +1,5 @@
 #include "websocket_server.hpp"
+#include "service/user_status_manager.hpp"
 #include "utils/logger.hpp"
 #include "utils/jwt_utils.hpp"
 #include "db/database_manager.hpp"
@@ -7,7 +8,8 @@
 
 using json = nlohmann::json;
 
-WebSocketServer::WebSocketServer(DatabaseManager& db_manager) : db_manager_(db_manager)
+WebSocketServer::WebSocketServer(DatabaseManager& db_manager, std::shared_ptr<UserStatusManager> status_manager) 
+    : db_manager_(db_manager), status_manager_(status_manager)
 {
     // 关闭websocketpp的日志
     server_.clear_access_channels(websocketpp::log::alevel::all);
@@ -156,6 +158,13 @@ void WebSocketServer::on_close(connection_hdl hdl)
         // 从用户连接映射中移除
         user_connections_.erase(user_id);
         connection_users_.erase(it);
+        
+        // 更新用户状态管理器
+        if (status_manager_) {
+            // 从连接句柄获取指针，用于状态管理器
+            auto conn_ptr = hdl.lock().get();
+            status_manager_->unregisterWebSocketConnection(conn_ptr);
+        }
     }
     else
     {
@@ -177,46 +186,45 @@ void WebSocketServer::on_message(connection_hdl hdl, websocket_server::message_p
             auto json_msg = json::parse(msg->get_payload());
             if (json_msg.value("type", "") == "auth")
             {
-                // 处理认证消息
-                std::string user_id = json_msg.at("user_id").get<std::string>();
+                // 处理认证消息 - 只需要token
                 std::string token = json_msg.at("token").get<std::string>();
 
-                // 验证JWT令牌
+                // 验证JWT令牌并获取用户ID
                 auto verified_user_id = JwtUtils::verifyToken(token);
                 if (!verified_user_id)
                 {
-                    LOG_ERROR << "JWT verification failed for user: " << user_id;
+                    LOG_ERROR << "JWT verification failed";
                     json error_response = {
-                        {"type", "auth_error"},
-                        {"message", "Invalid token"}
+                        {"success", false},
+                        {"message", "Authentication failed"},
+                        {"error", "Invalid or expired token"}
                     };
                     server_.send(hdl, error_response.dump(), websocketpp::frame::opcode::text);
                     server_.close(hdl, websocketpp::close::status::policy_violation, "Invalid token");
                     return;
                 }
 
-                // 验证用户ID是否匹配
-                if (*verified_user_id != user_id)
-                {
-                    LOG_ERROR << "User ID mismatch: token contains " << *verified_user_id << " but request claims " << user_id;
-                    json error_response = {
-                        {"type", "auth_error"},
-                        {"message", "User ID mismatch"}
-                    };
-                    server_.send(hdl, error_response.dump(), websocketpp::frame::opcode::text);
-                    server_.close(hdl, websocketpp::close::status::policy_violation, "User ID mismatch");
-                    return;
-                }
+                std::string user_id = *verified_user_id;
 
                 // 认证通过，保存连接和用户ID映射
                 user_connections_[user_id] = hdl;
                 connection_users_[hdl] = user_id;
 
+                // 更新用户状态管理器
+                if (status_manager_) {
+                    auto conn_ptr = hdl.lock().get();
+                    status_manager_->userLogin(user_id, "websocket", conn_ptr);
+                    status_manager_->registerWebSocketConnection(user_id, conn_ptr);
+                }
+
                 LOG_INFO << "WebSocket connection authenticated for user: " << user_id;
                 json response = {
-                    {"type", "auth_success"},
-                    {"message", "Authentication successful"},
-                    {"user_id", user_id}
+                    {"success", true},
+                    {"message", "WebSocket authentication successful"},
+                    {"data", {
+                        {"user_id", user_id},
+                        {"status", "connected"}
+                    }}
                 };
                 server_.send(hdl, response.dump(), websocketpp::frame::opcode::text);
             }
@@ -236,8 +244,9 @@ void WebSocketServer::on_message(connection_hdl hdl, websocket_server::message_p
         {
             LOG_ERROR << "WebSocket message handling error: " << e.what();
             json error_response = {
-                {"type", "error"},
-                {"message", "Internal server error"}
+                {"success", false},
+                {"message", "Internal server error"},
+                {"error", "Failed to process authentication"}
             };
             server_.send(hdl, error_response.dump(), websocketpp::frame::opcode::text);
             server_.close(hdl, websocketpp::close::status::internal_endpoint_error, "Internal server error");
@@ -247,6 +256,12 @@ void WebSocketServer::on_message(connection_hdl hdl, websocket_server::message_p
     {
         // 处理已认证用户的消息
         std::string user_id = it->second;
+        
+        // 更新用户心跳
+        if (status_manager_) {
+            status_manager_->updateHeartbeat(user_id);
+        }
+        
         try
         {
             auto json_msg = json::parse(msg->get_payload());
@@ -279,7 +294,7 @@ void WebSocketServer::handle_authenticated_message(connection_hdl hdl, const std
     {
         handle_leave_room(hdl, user_id, message);
     }
-    else if (msg_type == "chat_message")
+    else if (msg_type == "send_message")
     {
         handle_chat_message(hdl, user_id, message);
     }
@@ -287,8 +302,12 @@ void WebSocketServer::handle_authenticated_message(connection_hdl hdl, const std
     {
         // 处理心跳消息
         json pong_response = {
-            {"type", "pong"},
-            {"timestamp", std::time(nullptr)}
+            {"success", true},
+            {"message", "Pong response"},
+            {"data", {
+                {"type", "pong"},
+                {"timestamp", std::time(nullptr)}
+            }}
         };
         server_.send(hdl, pong_response.dump(), websocketpp::frame::opcode::text);
     }
@@ -319,18 +338,25 @@ void WebSocketServer::handle_join_room(connection_hdl hdl, const std::string& us
         
         // 发送成功响应给用户
         json response = {
-            {"type", "room_joined"},
-            {"room_id", room_id},
-            {"message", "Successfully joined room"}
+            {"success", true},
+            {"message", "Room joined successfully"},
+            {"data", {
+                {"type", "room_joined"},
+                {"room_id", room_id},
+                {"user_id", user_id}
+            }}
         };
         server_.send(hdl, response.dump(), websocketpp::frame::opcode::text);
         
         // 通知房间内其他用户
         json notification = {
-            {"type", "user_joined"},
-            {"user_id", user_id},
-            {"room_id", room_id},
-            {"message", "User " + user_id + " joined the room"}
+            {"success", true},
+            {"message", "User joined room"},
+            {"data", {
+                {"type", "user_joined"},
+                {"user_id", user_id},
+                {"room_id", room_id}
+            }}
         };
         broadcast_to_room(room_id, notification.dump(), user_id); // 排除自己
     }
@@ -357,18 +383,25 @@ void WebSocketServer::handle_leave_room(connection_hdl hdl, const std::string& u
     
     // 发送成功响应给用户
     json response = {
-        {"type", "room_left"},
-        {"room_id", room_id},
-        {"message", "Successfully left room"}
+        {"success", true},
+        {"message", "Room left successfully"},
+        {"data", {
+            {"type", "room_left"},
+            {"room_id", room_id},
+            {"user_id", user_id}
+        }}
     };
     server_.send(hdl, response.dump(), websocketpp::frame::opcode::text);
     
     // 通知房间内其他用户
     json notification = {
-        {"type", "user_left"},
-        {"user_id", user_id},
-        {"room_id", room_id},
-        {"message", "User " + user_id + " left the room"}
+        {"success", true},
+        {"message", "User left room"},
+        {"data", {
+            {"type", "user_left"},
+            {"user_id", user_id},
+            {"room_id", room_id}
+        }}
     };
     broadcast_to_room(room_id, notification.dump());
 }
@@ -405,11 +438,15 @@ void WebSocketServer::handle_chat_message(connection_hdl hdl, const std::string&
         
         // 构造聊天消息
         json chat_msg = {
-            {"type", "chat_message"},
-            {"user_id", user_id},
-            {"room_id", room_id},
-            {"content", content},
-            {"timestamp", std::time(nullptr)}
+            {"success", true},
+            {"message", "Message sent successfully"},
+            {"data", {
+                {"type", "message_received"},
+                {"user_id", user_id},
+                {"room_id", room_id},
+                {"content", content},
+                {"timestamp", std::time(nullptr)}
+            }}
         };
         
         // 广播到房间内所有用户（包括发送者）
@@ -448,8 +485,9 @@ void WebSocketServer::leave_room(const std::string& user_id, const std::string& 
 void WebSocketServer::send_error(connection_hdl hdl, const std::string& error_message)
 {
     json error_response = {
-        {"type", "error"},
-        {"message", error_message}
+        {"success", false},
+        {"message", "Request failed"},
+        {"error", error_message}
     };
     try
     {
@@ -498,4 +536,28 @@ void WebSocketServer::broadcast_to_room(const std::string &room_id, const std::s
     }
     
     LOG_INFO << "Broadcasted message to " << sent_count << " users in room: " << room_id;
+}
+
+size_t WebSocketServer::getOnlineUserCount() const
+{
+    if (status_manager_) {
+        return status_manager_->getOnlineUserCount();
+    }
+    
+    std::lock_guard<std::mutex> lock(connection_mutex_);
+    return user_connections_.size();
+}
+
+std::vector<std::string> WebSocketServer::getOnlineUsers() const
+{
+    if (status_manager_) {
+        return status_manager_->getOnlineUsers();
+    }
+    
+    std::lock_guard<std::mutex> lock(connection_mutex_);
+    std::vector<std::string> users;
+    for (const auto& [user_id, connection] : user_connections_) {
+        users.push_back(user_id);
+    }
+    return users;
 }

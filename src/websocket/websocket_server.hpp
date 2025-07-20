@@ -9,9 +9,11 @@
 #include <mutex>
 #include <set>
 #include <string>
+#include <memory>
 
 // 前向声明
 class DatabaseManager;
+class UserStatusManager;
 
 using websocket_server = websocketpp::server<websocketpp::config::asio>;
 using connection_hdl = websocketpp::connection_hdl;
@@ -32,7 +34,7 @@ struct ConnectionHdlEqual {
 class WebSocketServer
 {
 public:
-    explicit WebSocketServer(DatabaseManager& db_manager);
+    explicit WebSocketServer(DatabaseManager& db_manager, std::shared_ptr<UserStatusManager> status_manager);
     ~WebSocketServer();
 
     // 在指定端口启动WebSocket服务器
@@ -47,6 +49,10 @@ public:
     // 广播消息到房间
     void broadcast_to_room(const std::string &room_id, const std::string &message);
     void broadcast_to_room(const std::string &room_id, const std::string &message, const std::string &exclude_user_id);
+
+    // 获取在线用户统计
+    size_t getOnlineUserCount() const;
+    std::vector<std::string> getOnlineUsers() const;
 private:
     //初始化服务器，绑定事件处理程序
     void setup_handlers();
@@ -69,10 +75,13 @@ private:
 
     websocket_server server_; // WebSocket服务器实例
     std::thread server_thread_; // 服务器运行线程
-    std::mutex connection_mutex_; // 保护连接的互斥锁
+    mutable std::mutex connection_mutex_; // 保护连接的互斥锁
     
     // 数据库管理器引用
     DatabaseManager& db_manager_;
+    
+    // 用户状态管理器
+    std::shared_ptr<UserStatusManager> status_manager_;
     
     // 用户和连接管理
     std::unordered_map<std::string, connection_hdl> user_connections_; // 用户ID到连接句柄的映射
