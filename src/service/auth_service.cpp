@@ -167,9 +167,6 @@ http::HttpResponse AuthService::loginUser(const http::HttpRequest &request)
             return http::HttpResponse::InternalError().withJsonBody(error_response);
         }
 
-        //更新用户最后活跃时间
-        db_manager_.updateUserLastActiveTime(user->getId());
-
         // 生成 JWT 令牌
         return createAndSignToken(*user);
     }
@@ -230,7 +227,6 @@ http::HttpResponse AuthService::createAndSignToken(const User &user)
         .set_expires_at(std::chrono::system_clock::now() + std::chrono::hours(1))//过期时间，1小时后
         .set_subject(user.getId())//设置主题 (sub)，这是标准声明，通常用来存放用户的唯一标识符
         .set_payload_claim("username", jwt::claim(user.getUsername()))//自定义声明，存放用户名
-        .set_payload_claim("last_active", jwt::claim(std::to_string(user.getLastActiveTime())))//自定义声明，存放最后活跃时间
         .sign(jwt::algorithm::hs256{secret_key});//使用哈希算法HS256和密钥进行签名
     
     //构造HTTP响应
