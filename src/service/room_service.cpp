@@ -132,8 +132,10 @@ http::HttpResponse RoomService::handleCreateRoom(const http::HttpRequest &reques
     {
         request_body = json::parse(request.getBody());
         std::string room_name = request_body.at("name").get<std::string>();//尝试获取房间名
+        std::string room_description = request_body.value("description", ""); // 获取房间描述，如果没有则默认为空
+        
         //调用DB接口创建房间
-        auto room_opt = db_manager_.createRoom(room_name, user_id);
+        auto room_opt = db_manager_.createRoom(room_name, room_description, user_id);
         if (!room_opt)
         {
             LOG_ERROR << "Failed to create room for user: " << user_id;
@@ -340,10 +342,16 @@ http::HttpResponse RoomService::handleGetRooms(const http::HttpRequest &request)
     {
         auto rooms = db_manager_.getAllRooms();
         
-        // 将Room对象转换为JSON数组
+        // 将Room对象转换为JSON数组，并添加成员数量
         json rooms_json = json::array();
         for (const auto& room : rooms) {
-            rooms_json.push_back(room.toJson());
+            json room_json = room.toJson();
+            
+            // 获取房间成员数量
+            auto members = db_manager_.getRoomMembers(room.getId());
+            room_json["member_count"] = members.size();
+            
+            rooms_json.push_back(room_json);
         }
         
         // 构造标准的JSON响应格式
