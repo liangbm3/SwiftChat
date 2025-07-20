@@ -14,7 +14,7 @@ public:
     explicit RoomRepository(DatabaseConnection* db_conn);
 
     // 房间基本操作
-    std::optional<Room> createRoom(const std::string &name, const std::string &creator_id);
+    std::optional<Room> createRoom(const std::string &name, const std::string &description, const std::string &creator_id);
     bool deleteRoom(const std::string &room_id);// 根据ID删除房间
     bool roomExists(const std::string &room_id);// 根据ID检查房间是否存在
     bool updateRoom(const std::string &room_id, const std::string &name, const std::string &description);// 更新房间

@@ -6,7 +6,7 @@
 
 RoomRepository::RoomRepository(DatabaseConnection* db_conn) : db_conn_(db_conn) {}
 
-std::optional<Room> RoomRepository::createRoom(const std::string &name, const std::string &creator_id) {
+std::optional<Room> RoomRepository::createRoom(const std::string &name, const std::string &description, const std::string &creator_id) {
     if (!db_conn_ || !db_conn_->isConnected()) {
         return std::nullopt;
     }
@@ -16,7 +16,7 @@ std::optional<Room> RoomRepository::createRoom(const std::string &name, const st
     // 1. 生成一个新的、唯一的房间ID
     std::string room_id = generateRoomId();
 
-    LOG_INFO << "createRoom: room_id=" << room_id << ", name=" << name << ", creator_id=" << creator_id;
+    LOG_INFO << "createRoom: room_id=" << room_id << ", name=" << name << ", description=" << description << ", creator_id=" << creator_id;
 
     const char *sql = "INSERT INTO rooms (id, name, description, creator_id, created_at) VALUES (?, ?, ?, ?, ?);";
     sqlite3_stmt *stmt;
@@ -28,7 +28,7 @@ std::optional<Room> RoomRepository::createRoom(const std::string &name, const st
 
     sqlite3_bind_text(stmt, 1, room_id.c_str(), -1, SQLITE_STATIC);
     sqlite3_bind_text(stmt, 2, name.c_str(), -1, SQLITE_STATIC);
-    sqlite3_bind_text(stmt, 3, "", -1, SQLITE_STATIC); // 默认空描述
+    sqlite3_bind_text(stmt, 3, description.c_str(), -1, SQLITE_STATIC); // 使用传入的描述
     sqlite3_bind_text(stmt, 4, creator_id.c_str(), -1, SQLITE_STATIC);
     sqlite3_bind_int64(stmt, 5, std::chrono::system_clock::now().time_since_epoch().count());
 
