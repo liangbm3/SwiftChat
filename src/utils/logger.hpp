@@ -8,21 +8,21 @@
 #include <iomanip>
 #include <chrono>
 #include <mutex>
+#include <fstream>
 
 namespace utils
 {
-
-    // ANSI escape codes for colors
+    // ANSI 颜色转义码
     struct Color
     {
-        static constexpr const char *RESET = "\033[0m";
-        static constexpr const char *RED = "\033[31m";
-        static constexpr const char *GREEN = "\033[32m";
-        static constexpr const char *YELLOW = "\033[33m";
-        static constexpr const char *BLUE = "\033[34m";
-        static constexpr const char *MAGENTA = "\033[35m";
-        static constexpr const char *CYAN = "\033[36m";
-        static constexpr const char *BOLD = "\033[1m";
+        static constexpr const char* RESET = "\033[0m";
+        static constexpr const char* RED = "\033[31m";
+        static constexpr const char* GREEN = "\033[32m";
+        static constexpr const char* YELLOW = "\033[33m";
+        static constexpr const char* BLUE = "\033[34m";
+        static constexpr const char* MAGENTA = "\033[35m";
+        static constexpr const char* CYAN = "\033[36m";
+        static constexpr const char* BOLD = "\033[1m";
     };
 
     enum class LogLevel
@@ -40,56 +40,11 @@ namespace utils
         class LogStream
         {
         public:
-            LogStream(LogLevel level, const char *file, const char *function, int line)
-                : level_(level), file_(getFileName(file)), function_(function), line_(line)
-            {
-                if (level_ >= Logger::getGlobalLevel())
-                {
-                    // 添加时间戳
-                    auto now = std::chrono::system_clock::now();
-                    auto now_time_t = std::chrono::system_clock::to_time_t(now);
-                    auto now_tm = *std::localtime(&now_time_t);
-                    auto now_ms = std::chrono::duration_cast<std::chrono::microseconds>(
-                                      now.time_since_epoch()) %
-                                  1000000;
-
-                    char buffer[80];
-                    std::strftime(buffer, sizeof(buffer), "%Y-%m-%d %H:%M:%S", &now_tm);
-
-                    stream_ << Color::CYAN << "[" << buffer << "."
-                            << std::setfill('0') << std::setw(6) << now_ms.count() << "] "
-                            << getLevelColor(level_) << Color::BOLD << "[" << getLevelStr(level_) << "] "
-                            << Color::MAGENTA << "[" << std::this_thread::get_id() << "] "
-                            << Color::BLUE << "[" << file_ << ":" << line_ << "] "
-                            << Color::CYAN << "[" << function_ << "] "
-                            << getLevelColor(level_);
-                }
-            }
-
-            ~LogStream()
-            {
-                if (level_ >= Logger::getGlobalLevel())
-                {
-                    stream_ << Color::RESET << std::endl;
-                    
-                    // 使用锁确保线程安全的输出
-                    static std::mutex output_mutex;
-                    std::lock_guard<std::mutex> lock(output_mutex);
-                    
-                    std::cout << stream_.str();
-                    std::cout.flush();
-
-                    // 如果是错误或致命错误，也输出到 stderr
-                    if (level_ >= LogLevel::ERROR)
-                    {
-                        std::cerr << stream_.str();
-                        std::cerr.flush();
-                    }
-                }
-            }
+            LogStream(LogLevel level, const char* file, const char* function, int line);
+            ~LogStream();
 
             template <typename T>
-            LogStream &operator<<(const T &val)
+            LogStream& operator<<(const T& val)
             {
                 if (level_ >= Logger::getGlobalLevel())
                 {
@@ -98,117 +53,59 @@ namespace utils
                 return *this;
             }
 
+            // 禁用拷贝构造和赋值
+            LogStream(const LogStream&) = delete;
+            LogStream& operator=(const LogStream&) = delete;
+
+            // 允许移动构造和赋值
+            LogStream(LogStream&& other) noexcept;
+            LogStream& operator=(LogStream&& other) noexcept;
+
         private:
             std::ostringstream stream_;
             LogLevel level_;
-            const char *file_;
-            const char *function_;
+            std::string file_;
+            std::string function_;
             int line_;
+            bool should_log_;
 
-            static const char *getFileName(const char *filePath)
-            {
-                const char *fileName = filePath;
-                for (const char *p = filePath; *p; ++p)
-                {
-                    if (*p == '/' || *p == '\\')
-                    {
-                        fileName = p + 1;
-                    }
-                }
-                return fileName;
-            }
-
-            static const char *getLevelStr(LogLevel level)
-            {
-                switch (level)
-                {
-                case LogLevel::DEBUG:
-                    return "DEBUG";
-                case LogLevel::INFO:
-                    return "INFO";
-                case LogLevel::WARN:
-                    return "WARN";
-                case LogLevel::ERROR:
-                    return "ERROR";
-                case LogLevel::FATAL:
-                    return "FATAL";
-                default:
-                    return "UNKNOWN";
-                }
-            }
-
-            static const char *getLevelColor(LogLevel level)
-            {
-                switch (level)
-                {
-                case LogLevel::DEBUG:
-                    return Color::RESET;
-                case LogLevel::INFO:
-                    return Color::GREEN;
-                case LogLevel::WARN:
-                    return Color::YELLOW;
-                case LogLevel::ERROR:
-                    return Color::RED;
-                case LogLevel::FATAL:
-                    return Color::RED;
-                default:
-                    return Color::RESET;
-                }
-            }
+            static const char* getFileName(const char* filePath);
+            static std::string stripAnsiCodes(const std::string& input);
+            static const char* getLevelStr(LogLevel level);
+            static const char* getLevelColor(LogLevel level);
         };
 
-        static void setGlobalLevel(LogLevel level)
-        {
-            globalLevel_ = level;
-        }
+        // 日志级别控制
+        static void setGlobalLevel(LogLevel level);
+        static LogLevel getGlobalLevel();
 
-        static LogLevel getGlobalLevel()
-        {
-            return globalLevel_;
-        }
+        // 文件日志控制
+        static bool initFileLogger(const std::string& filename);
+        static void closeFileLogger();
+        static bool isFileLoggingEnabled();
 
-        // 添加一个获取锁的方法以支持批量日志输出
-        static std::mutex& getOutputMutex()
-        {
-            static std::mutex output_mutex;
-            return output_mutex;
-        }
-
-        static LogStream Debug(const char *file, const char *function, int line)
-        {
-            return LogStream(LogLevel::DEBUG, file, function, line);
-        }
-
-        static LogStream Info(const char *file, const char *function, int line)
-        {
-            return LogStream(LogLevel::INFO, file, function, line);
-        }
-
-        static LogStream Warn(const char *file, const char *function, int line)
-        {
-            return LogStream(LogLevel::WARN, file, function, line);
-        }
-
-        static LogStream Error(const char *file, const char *function, int line)
-        {
-            return LogStream(LogLevel::ERROR, file, function, line);
-        }
-
-        static LogStream Fatal(const char *file, const char *function, int line)
-        {
-            return LogStream(LogLevel::FATAL, file, function, line);
-        }
+        // 日志流创建方法
+        static LogStream Debug(const char* file, const char* function, int line);
+        static LogStream Info(const char* file, const char* function, int line);
+        static LogStream Warn(const char* file, const char* function, int line);
+        static LogStream Error(const char* file, const char* function, int line);
+        static LogStream Fatal(const char* file, const char* function, int line);
 
     private:
         static LogLevel globalLevel_;
+        static std::mutex output_mutex_;
+        static std::ofstream file_stream_;
+        static bool file_logging_enabled_;
+        
+        // 内部辅助方法
+        static void writeToConsole(const std::string& message, LogLevel level);
+        static void writeToFile(const std::string& message);
+        static std::string stripAnsiCodesInternal(const std::string& input);
     };
-
-    // 在 .cpp 文件中初始化
-    inline LogLevel Logger::globalLevel_ = LogLevel::INFO;
 
 } // namespace utils
 
-// 定义便捷宏
+// 便捷宏定义
 #define LOG_DEBUG utils::Logger::Debug(__FILE__, __FUNCTION__, __LINE__)
 #define LOG_INFO utils::Logger::Info(__FILE__, __FUNCTION__, __LINE__)
 #define LOG_WARN utils::Logger::Warn(__FILE__, __FUNCTION__, __LINE__)

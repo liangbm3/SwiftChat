@@ -7,6 +7,8 @@
 #include <chrono>
 #include <cassert>
 #include <cstdio>
+#include <fstream>
+#include <cstdio> // for std::remove
 #include "../../src/utils/logger.hpp"
 
 using namespace utils;
@@ -54,10 +56,15 @@ protected:
     void SetUp() override {
         // 每个测试开始前重置日志级别
         Logger::setGlobalLevel(LogLevel::DEBUG);
+        // 确保文件日志被关闭
+        Logger::closeFileLogger();
     }
 
     void TearDown() override {
         // 测试结束后清理
+        Logger::closeFileLogger();
+        // 重置日志级别
+        Logger::setGlobalLevel(LogLevel::DEBUG);
     }
 };
 
@@ -110,7 +117,7 @@ TEST_F(LoggerTest, LogFormat) {
     std::string output = capture.getCout();
     
     // 检查是否包含时间戳、级别、线程ID、文件名、函数名等信息
-    EXPECT_TRUE(contains(output, "[INFO]")); // 注意这里有空格
+    EXPECT_TRUE(contains(output, "[INFO ]")); // 注意这里有空格
     EXPECT_TRUE(contains(output, ".cpp"));
     EXPECT_TRUE(contains(output, "格式测试消息"));
 }
@@ -300,6 +307,232 @@ TEST_F(LoggerTest, FilterPerformance) {
     auto duration = std::chrono::duration_cast<std::chrono::milliseconds>(end - start);
     
     EXPECT_LT(duration.count(), 1000); // 被过滤的日志应该很快
+}
+
+// 测试文件日志功能
+TEST_F(LoggerTest, FileLogging) {
+    const std::string test_log_file = "/tmp/test_logger.log";
+    
+    // 清理可能存在的测试文件
+    std::remove(test_log_file.c_str());
+    
+    // 初始化文件日志
+    EXPECT_TRUE(Logger::initFileLogger(test_log_file));
+    EXPECT_TRUE(Logger::isFileLoggingEnabled());
+    
+    // 写入一些日志
+    LOG_INFO << "这是文件日志测试消息";
+    LOG_ERROR << "这是错误日志消息";
+    LOG_DEBUG << "这是调试消息";
+    
+    // 关闭文件日志
+    Logger::closeFileLogger();
+    EXPECT_FALSE(Logger::isFileLoggingEnabled());
+    
+    // 检查文件内容
+    std::ifstream log_file(test_log_file);
+    ASSERT_TRUE(log_file.is_open());
+    
+    std::string file_content;
+    std::string line;
+    while (std::getline(log_file, line)) {
+        file_content += line + "\n";
+    }
+    log_file.close();
+    
+    // 验证日志内容（文件中应该没有ANSI颜色代码）
+    EXPECT_TRUE(contains(file_content, "这是文件日志测试消息"));
+    EXPECT_TRUE(contains(file_content, "这是错误日志消息"));
+    EXPECT_TRUE(contains(file_content, "这是调试消息"));
+    EXPECT_FALSE(contains(file_content, "\033[")); // 不应该包含ANSI转义序列
+    
+    // 清理测试文件
+    std::remove(test_log_file.c_str());
+}
+
+TEST_F(LoggerTest, FileLoggingWithInvalidPath) {
+    const std::string invalid_path = "/nonexistent/directory/test.log";
+    
+    // 尝试打开无效路径的文件
+    EXPECT_FALSE(Logger::initFileLogger(invalid_path));
+    EXPECT_FALSE(Logger::isFileLoggingEnabled());
+}
+
+TEST_F(LoggerTest, FileLoggingAppendMode) {
+    const std::string test_log_file = "/tmp/test_append.log";
+    
+    // 清理可能存在的测试文件
+    std::remove(test_log_file.c_str());
+    
+    // 第一次写入
+    EXPECT_TRUE(Logger::initFileLogger(test_log_file));
+    LOG_INFO << "第一条消息";
+    Logger::closeFileLogger();
+    
+    // 第二次写入（应该追加，不覆盖）
+    EXPECT_TRUE(Logger::initFileLogger(test_log_file));
+    LOG_INFO << "第二条消息";
+    Logger::closeFileLogger();
+    
+    // 检查文件内容
+    std::ifstream log_file(test_log_file);
+    ASSERT_TRUE(log_file.is_open());
+    
+    std::string file_content;
+    std::string line;
+    while (std::getline(log_file, line)) {
+        file_content += line + "\n";
+    }
+    log_file.close();
+    
+    // 验证两条消息都存在
+    EXPECT_TRUE(contains(file_content, "第一条消息"));
+    EXPECT_TRUE(contains(file_content, "第二条消息"));
+    
+    // 清理测试文件
+    std::remove(test_log_file.c_str());
+}
+
+TEST_F(LoggerTest, FileLoggingThreadSafety) {
+    const std::string test_log_file = "/tmp/test_thread_safe.log";
+    
+    // 清理可能存在的测试文件
+    std::remove(test_log_file.c_str());
+    
+    // 初始化文件日志
+    EXPECT_TRUE(Logger::initFileLogger(test_log_file));
+    
+    const int thread_count = 5;
+    const int messages_per_thread = 20;
+    std::vector<std::thread> threads;
+    
+    // 启动多个线程同时写文件日志
+    for (int i = 0; i < thread_count; ++i) {
+        threads.emplace_back([i, messages_per_thread]() {
+            for (int j = 0; j < messages_per_thread; ++j) {
+                LOG_INFO << "线程" << i << "文件消息" << j;
+                std::this_thread::sleep_for(std::chrono::milliseconds(1));
+            }
+        });
+    }
+    
+    // 等待所有线程完成
+    for (auto& thread : threads) {
+        thread.join();
+    }
+    
+    Logger::closeFileLogger();
+    
+    // 检查文件内容
+    std::ifstream log_file(test_log_file);
+    ASSERT_TRUE(log_file.is_open());
+    
+    std::string file_content;
+    std::string line;
+    while (std::getline(log_file, line)) {
+        file_content += line + "\n";
+    }
+    log_file.close();
+    
+    // 计算消息数量
+    int message_count = 0;
+    size_t pos = 0;
+    while ((pos = file_content.find("文件消息", pos)) != std::string::npos) {
+        message_count++;
+        pos++;
+    }
+    
+    EXPECT_EQ(message_count, thread_count * messages_per_thread);
+    
+    // 清理测试文件
+    std::remove(test_log_file.c_str());
+}
+
+TEST_F(LoggerTest, AnsiCodeStripping) {
+    const std::string test_log_file = "/tmp/test_ansi.log";
+    
+    // 清理可能存在的测试文件
+    std::remove(test_log_file.c_str());
+    
+    // 初始化文件日志
+    EXPECT_TRUE(Logger::initFileLogger(test_log_file));
+    
+    // 写入包含各种级别的日志（会有不同颜色）
+    LOG_DEBUG << "调试消息";
+    LOG_INFO << "信息消息";
+    LOG_WARN << "警告消息";
+    LOG_ERROR << "错误消息";
+    LOG_FATAL << "致命错误消息";
+    
+    Logger::closeFileLogger();
+    
+    // 检查文件内容
+    std::ifstream log_file(test_log_file);
+    ASSERT_TRUE(log_file.is_open());
+    
+    std::string file_content;
+    std::string line;
+    while (std::getline(log_file, line)) {
+        file_content += line + "\n";
+    }
+    log_file.close();
+    
+    // 验证消息存在但没有ANSI代码
+    EXPECT_TRUE(contains(file_content, "调试消息"));
+    EXPECT_TRUE(contains(file_content, "信息消息"));
+    EXPECT_TRUE(contains(file_content, "警告消息"));
+    EXPECT_TRUE(contains(file_content, "错误消息"));
+    EXPECT_TRUE(contains(file_content, "致命错误消息"));
+    
+    // 确保没有ANSI转义序列
+    EXPECT_FALSE(contains(file_content, "\033["));
+    EXPECT_FALSE(contains(file_content, "\033[0m"));
+    EXPECT_FALSE(contains(file_content, "\033[31m"));
+    EXPECT_FALSE(contains(file_content, "\033[32m"));
+    
+    // 清理测试文件
+    std::remove(test_log_file.c_str());
+}
+
+TEST_F(LoggerTest, FileLoggingWithLogLevelFilter) {
+    const std::string test_log_file = "/tmp/test_level_filter.log";
+    
+    // 清理可能存在的测试文件
+    std::remove(test_log_file.c_str());
+    
+    // 设置日志级别为WARN
+    Logger::setGlobalLevel(LogLevel::WARN);
+    
+    // 初始化文件日志
+    EXPECT_TRUE(Logger::initFileLogger(test_log_file));
+    
+    // 写入不同级别的日志
+    LOG_DEBUG << "这条调试消息不应该出现";
+    LOG_INFO << "这条信息消息不应该出现";
+    LOG_WARN << "这条警告消息应该出现";
+    LOG_ERROR << "这条错误消息应该出现";
+    
+    Logger::closeFileLogger();
+    
+    // 检查文件内容
+    std::ifstream log_file(test_log_file);
+    ASSERT_TRUE(log_file.is_open());
+    
+    std::string file_content;
+    std::string line;
+    while (std::getline(log_file, line)) {
+        file_content += line + "\n";
+    }
+    log_file.close();
+    
+    // 验证只有WARN及以上级别的消息被记录
+    EXPECT_FALSE(contains(file_content, "这条调试消息不应该出现"));
+    EXPECT_FALSE(contains(file_content, "这条信息消息不应该出现"));
+    EXPECT_TRUE(contains(file_content, "这条警告消息应该出现"));
+    EXPECT_TRUE(contains(file_content, "这条错误消息应该出现"));
+    
+    // 清理测试文件
+    std::remove(test_log_file.c_str());
 }
 
 // Google Test main 函数
