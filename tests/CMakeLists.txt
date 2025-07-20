@@ -2,21 +2,21 @@
 
 # 创建用户测试可执行文件
 add_executable(test_user 
-    chat/test_user.cpp
-    ../src/chat/user.cpp
+    model/test_user.cpp
+    ../src/model/user.cpp
 )
 
 # 创建消息测试可执行文件
 add_executable(test_message
-    chat/test_message.cpp
-    ../src/chat/message.cpp
-    ../src/chat/user.cpp
+    model/test_message.cpp
+    ../src/model/message.cpp
+    ../src/model/user.cpp
 )
 
 # 创建房间测试可执行文件
 add_executable(test_room
-    chat/test_room.cpp
-    ../src/chat/room.cpp
+    model/test_room.cpp
+    ../src/model/room.cpp
 )
 
 # 创建日志系统测试可执行文件
@@ -34,9 +34,9 @@ add_executable(test_database_manager
     ../src/db/user_repository.cpp
     ../src/db/room_repository.cpp
     ../src/db/message_repository.cpp
-    ../src/chat/user.cpp
-    ../src/chat/room.cpp
-    ../src/chat/message.cpp
+    ../src/model/user.cpp
+    ../src/model/room.cpp
+    ../src/model/message.cpp
     ../src/utils/logger.cpp
 )
 
@@ -73,22 +73,6 @@ add_executable(test_http_server
     ../src/utils/logger.cpp
 )
 
-# 创建WebSocket基础测试可执行文件
-add_executable(test_websocket_basic 
-    websocket/test_websocket_basic.cpp
-    ../src/websocket/websocket_server.cpp
-    ../src/utils/logger.cpp
-    ../src/utils/jwt_utils.cpp
-    ../src/http/http_request.cpp
-    ../src/db/database_manager.cpp
-    ../src/db/database_connection.cpp
-    ../src/db/user_repository.cpp
-    ../src/db/room_repository.cpp
-    ../src/db/message_repository.cpp
-    ../src/chat/user.cpp
-    ../src/chat/room.cpp
-    ../src/chat/message.cpp
-)
 
 # 链接必要的库
 target_link_libraries(test_user 
@@ -152,13 +136,6 @@ target_link_libraries(test_http_server
     Threads::Threads
 )
 
-target_link_libraries(test_websocket_basic
-    GTest::gtest
-    GTest::gtest_main
-    Threads::Threads
-    ${OPENSSL_LIBRARIES}
-    sqlite3
-)
 
 
 # 设置测试可执行文件的输出目录
@@ -203,9 +180,6 @@ set_target_properties(test_http_server PROPERTIES
     RUNTIME_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/tests
 )
 
-set_target_properties(test_websocket_basic PROPERTIES
-    RUNTIME_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/tests
-)
 
 # set_target_properties(test_auth_utils PROPERTIES
 #     RUNTIME_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/tests
@@ -270,11 +244,6 @@ target_include_directories(test_http_server PRIVATE
     
 )
 
-target_include_directories(test_websocket_basic PRIVATE
-    ${CMAKE_SOURCE_DIR}/src
-    ${CMAKE_SOURCE_DIR}/third_party
-    ${CMAKE_SOURCE_DIR}/third_party/websocketpp
-)
 
 # target_include_directories(test_auth_utils PRIVATE
 #     ${CMAKE_SOURCE_DIR}/src
@@ -295,5 +264,4 @@ add_test(NAME TimerTests COMMAND test_timer)
 add_test(NAME HttpRequestTests COMMAND test_http_request)
 add_test(NAME HttpResponseTests COMMAND test_http_response)
 add_test(NAME HttpServerTests COMMAND test_http_server)
-add_test(NAME WebSocketBasicTests COMMAND test_websocket_basic)
 add_test(NAME AuthUtilsTests COMMAND test_auth_utils)

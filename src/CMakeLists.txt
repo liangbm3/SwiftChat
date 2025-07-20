@@ -3,9 +3,9 @@
 # 添加可执行文件
 add_executable(SwiftChat
     main.cpp
-    chat/user.cpp
-    chat/room.cpp
-    chat/message.cpp
+    model/user.cpp
+    model/room.cpp
+    model/message.cpp
     http/http_server.cpp
     http/http_request.cpp
     http/http_response.cpp
@@ -16,6 +16,8 @@ add_executable(SwiftChat
     service/auth_service.cpp
     service/room_service.cpp
     service/message_service.cpp
+    service/user_service.cpp
+    service/server_service.cpp
     middleware/auth_middleware.cpp
     websocket/websocket_server.cpp
     db/database_manager.cpp
