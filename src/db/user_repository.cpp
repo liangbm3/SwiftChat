@@ -136,7 +136,7 @@ std::vector<User> UserRepository::getAllUsers() const
     if (!db_conn_->isConnected()) return users;
     
     std::lock_guard<std::recursive_mutex> lock(db_conn_->getMutex());
-    const char *sql = "SELECT id, username, password_hash, is_online, last_active_time FROM users;";
+    const char *sql = "SELECT id, username, password_hash, is_online FROM users;";
     sqlite3_stmt *stmt;
 
     if (sqlite3_prepare_v2(db_conn_->getDb(), sql, -1, &stmt, nullptr) != SQLITE_OK)
@@ -151,10 +151,8 @@ std::vector<User> UserRepository::getAllUsers() const
         const char *username = reinterpret_cast<const char *>(sqlite3_column_text(stmt, 1));
         const char *password = reinterpret_cast<const char *>(sqlite3_column_text(stmt, 2));
         bool is_online = sqlite3_column_int(stmt, 3) > 0;
-        int64_t last_active_time = sqlite3_column_int64(stmt, 4);
 
-        User user(std::string(id), std::string(username), std::string(password),
-                  is_online, last_active_time);
+        User user(std::string(id), std::string(username), std::string(password), is_online);
         users.push_back(user);
     }
 
@@ -167,7 +165,7 @@ std::optional<User> UserRepository::getUserById(const std::string &user_id) cons
     if (!db_conn_->isConnected()) return std::nullopt;
 
     std::lock_guard<std::recursive_mutex> lock(db_conn_->getMutex());
-    const char *sql = "SELECT id, username, password_hash, is_online, last_active_time FROM users WHERE id = ?;";
+    const char *sql = "SELECT id, username, password_hash, is_online FROM users WHERE id = ?;";
     sqlite3_stmt *stmt;
 
     if (sqlite3_prepare_v2(db_conn_->getDb(), sql, -1, &stmt, nullptr) != SQLITE_OK)
@@ -185,11 +183,10 @@ std::optional<User> UserRepository::getUserById(const std::string &user_id) cons
         const char *username = reinterpret_cast<const char *>(sqlite3_column_text(stmt, 1));
         const char *password = reinterpret_cast<const char *>(sqlite3_column_text(stmt, 2));
         bool is_online = sqlite3_column_int(stmt, 3) > 0;
-        int64_t last_active_time = sqlite3_column_int64(stmt, 4);
 
         // 构造并返回User对象。C++会自动将其包装在std::optional中
         User found_user(std::string(id), std::string(username), std::string(password),
-                        is_online, last_active_time);
+                        is_online);
         sqlite3_finalize(stmt);
         return found_user;
     }
@@ -206,7 +203,7 @@ std::optional<User> UserRepository::getUserByUsername(const std::string &usernam
     if (!db_conn_->isConnected()) return std::nullopt;
 
     std::lock_guard<std::recursive_mutex> lock(db_conn_->getMutex());
-    const char *sql = "SELECT id, username, password_hash, is_online, last_active_time FROM users WHERE username = ?;";
+    const char *sql = "SELECT id, username, password_hash, is_online FROM users WHERE username = ?;";
     sqlite3_stmt *stmt;
 
     if (sqlite3_prepare_v2(db_conn_->getDb(), sql, -1, &stmt, nullptr) != SQLITE_OK)
@@ -223,10 +220,9 @@ std::optional<User> UserRepository::getUserByUsername(const std::string &usernam
         const char *username_col = reinterpret_cast<const char *>(sqlite3_column_text(stmt, 1));
         const char *password = reinterpret_cast<const char *>(sqlite3_column_text(stmt, 2));
         bool is_online = sqlite3_column_int(stmt, 3) > 0;
-        int64_t last_active_time = sqlite3_column_int64(stmt, 4);
 
        User found_user(std::string(id), std::string(username_col), std::string(password),
-                        is_online, last_active_time);
+                        is_online);
         sqlite3_finalize(stmt);
         return found_user;
     }
