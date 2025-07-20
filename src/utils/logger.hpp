@@ -125,9 +125,9 @@ namespace utils
                 case LogLevel::DEBUG:
                     return "DEBUG";
                 case LogLevel::INFO:
-                    return "INFO ";
+                    return "INFO";
                 case LogLevel::WARN:
-                    return "WARN ";
+                    return "WARN";
                 case LogLevel::ERROR:
                     return "ERROR";
                 case LogLevel::FATAL:
