@@ -12,21 +12,16 @@ namespace http {
 
 class DatabaseManager;
 class User;
-class UserStatusManager;
 
 class AuthService
 {
 public:
     explicit AuthService(DatabaseManager& db_manager);
     
-    // 设置用户状态管理器
-    void setStatusManager(std::shared_ptr<UserStatusManager> status_manager);
-    
     void registerRoutes(http::HttpServer &server);
     
 private:
     DatabaseManager& db_manager_; // 数据库管理器引用，用于与数据库交互
-    std::shared_ptr<UserStatusManager> status_manager_; // 用户状态管理器
     
     //处理用户注册请求
     http::HttpResponse registerUser(const http::HttpRequest& request);

@@ -1,5 +1,4 @@
 #include "websocket_server.hpp"
-#include "service/user_status_manager.hpp"
 #include "utils/logger.hpp"
 #include "utils/jwt_utils.hpp"
 #include "db/database_manager.hpp"
@@ -8,8 +7,8 @@
 
 using json = nlohmann::json;
 
-WebSocketServer::WebSocketServer(DatabaseManager& db_manager, std::shared_ptr<UserStatusManager> status_manager) 
-    : db_manager_(db_manager), status_manager_(status_manager)
+WebSocketServer::WebSocketServer(DatabaseManager& db_manager) 
+    : db_manager_(db_manager)
 {
     // 关闭websocketpp的日志
     server_.clear_access_channels(websocketpp::log::alevel::all);
@@ -159,12 +158,6 @@ void WebSocketServer::on_close(connection_hdl hdl)
         user_connections_.erase(user_id);
         connection_users_.erase(it);
         
-        // 更新用户状态管理器
-        if (status_manager_) {
-            // 从连接句柄获取指针，用于状态管理器
-            auto conn_ptr = hdl.lock().get();
-            status_manager_->unregisterWebSocketConnection(conn_ptr);
-        }
     }
     else
     {
@@ -210,13 +203,6 @@ void WebSocketServer::on_message(connection_hdl hdl, websocket_server::message_p
                 user_connections_[user_id] = hdl;
                 connection_users_[hdl] = user_id;
 
-                // 更新用户状态管理器
-                if (status_manager_) {
-                    auto conn_ptr = hdl.lock().get();
-                    status_manager_->userLogin(user_id, "websocket", conn_ptr);
-                    status_manager_->registerWebSocketConnection(user_id, conn_ptr);
-                }
-
                 LOG_INFO << "WebSocket connection authenticated for user: " << user_id;
                 json response = {
                     {"success", true},
@@ -257,10 +243,6 @@ void WebSocketServer::on_message(connection_hdl hdl, websocket_server::message_p
         // 处理已认证用户的消息
         std::string user_id = it->second;
         
-        // 更新用户心跳
-        if (status_manager_) {
-            status_manager_->updateHeartbeat(user_id);
-        }
         
         try
         {
@@ -540,9 +522,6 @@ void WebSocketServer::broadcast_to_room(const std::string &room_id, const std::s
 
 size_t WebSocketServer::getOnlineUserCount() const
 {
-    if (status_manager_) {
-        return status_manager_->getOnlineUserCount();
-    }
     
     std::lock_guard<std::mutex> lock(connection_mutex_);
     return user_connections_.size();
@@ -550,9 +529,6 @@ size_t WebSocketServer::getOnlineUserCount() const
 
 std::vector<std::string> WebSocketServer::getOnlineUsers() const
 {
-    if (status_manager_) {
-        return status_manager_->getOnlineUsers();
-    }
     
     std::lock_guard<std::mutex> lock(connection_mutex_);
     std::vector<std::string> users;

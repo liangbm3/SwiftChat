@@ -55,14 +55,6 @@ TEST_F(DatabaseManagerTest, UserAuthenticationAndStatus) {
     ASSERT_TRUE(db_manager_->validateUser("bob", "securepass"));
     ASSERT_FALSE(db_manager_->validateUser("bob", "wrongpass"));
 
-    // 2. 更新并验证在线状态
-    ASSERT_TRUE(db_manager_->setUserOnlineStatus(bob_id, true));
-    bob_opt = db_manager_->getUserById(bob_id);
-    ASSERT_TRUE(bob_opt->isOnline());
-
-    ASSERT_TRUE(db_manager_->setUserOnlineStatus(bob_id, false));
-    bob_opt = db_manager_->getUserById(bob_id);
-    ASSERT_FALSE(bob_opt->isOnline());
 }
 
 

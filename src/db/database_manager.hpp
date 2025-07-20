@@ -24,7 +24,6 @@ public:
     bool createUser(const std::string &username, const std::string &password_hash);
     bool validateUser(const std::string &username, const std::string &password_hash);
     bool userExists(const std::string &user_id);
-    bool setUserOnlineStatus(const std::string &user_id, bool is_online);
     std::vector<User> getAllUsers();
     std::optional<User> getUserById(const std::string &user_id) const;
     std::optional<User> getUserByUsername(const std::string &username) const;

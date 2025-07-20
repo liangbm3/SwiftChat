@@ -4,6 +4,8 @@
 #include "service/auth_service.hpp"
 #include "service/room_service.hpp"
 #include "service/message_service.hpp"
+#include "service/user_service.hpp"
+#include "service/server_service.hpp"
 #include "middleware/auth_middleware.hpp"
 #include "db/database_manager.hpp"
 #include <iostream>
@@ -13,6 +15,7 @@
 #include <chrono>
 #include <ctime>
 #include <cstdlib>
+#include <memory>
 
 
 std::atomic<bool> running(true);
@@ -55,107 +58,21 @@ int main(int argc, char *argv[])
         AuthService auth_service(db_manager);
         RoomService room_service(db_manager);
         MessageService message_service(db_manager);
+        UserService user_service(db_manager);
+        ServerService server_service(db_manager);
         
         // 注册路由
         auth_service.registerRoutes(server);
         room_service.registerRoutes(server);
         message_service.registerRoutes(server);
+        user_service.registerRoutes(server);
+        server_service.registerRoutes(server);
         
         LOG_INFO << "All services registered successfully";
 
         // 创建并启动WebSocket服务器
         ws_server = std::make_unique<WebSocketServer>(db_manager);
         LOG_INFO << "WebSocket server created";
-
-        // 健康检查接口
-        http::HttpServer::Route health_route{
-            "/api/health",
-            "GET",
-            [](const http::HttpRequest &req)
-            {
-                return http::HttpResponse::Ok(R"({"status": "ok", "message": "Server is running"})");
-            },
-            false // 不需要认证
-        };
-        server.addHandler(health_route);
-
-        // 获取服务器信息接口
-        http::HttpServer::Route info_route{
-            "/api/info",
-            "GET",
-            [](const http::HttpRequest &req)
-            {
-                return http::HttpResponse::Ok()
-                    .withBody(R"({
-                        "name": "SwiftChat HTTP Server",
-                        "version": "1.0.0",
-                        "description": "A simple HTTP server with WebSocket support"
-                    })",
-                              "application/json");
-            },
-            false};
-        server.addHandler(info_route);
-
-        // Echo接口 - 返回请求的信息（支持GET和POST）
-        http::HttpServer::Route echo_get_route{
-            "/api/echo",
-            "GET",
-            [](const http::HttpRequest &req)
-            {
-                auto user_agent_opt = req.getHeaderValue("User-Agent");
-                std::string user_agent = user_agent_opt.has_value() ? std::string(user_agent_opt.value()) : "Unknown";
-                std::string response_body = R"({
-                    "method": ")" + req.getMethod() +
-                                            R"(",
-                    "path": ")" + req.getPath() +
-                                            R"(",
-                    "message": "Echo GET request received",
-                    "user_agent": ")" + user_agent +
-                                            R"("
-                })";
-                return http::HttpResponse::Ok()
-                    .withBody(response_body, "application/json");
-            },
-            false};
-        server.addHandler(echo_get_route);
-
-        http::HttpServer::Route echo_post_route{
-            "/api/echo",
-            "POST",
-            [](const http::HttpRequest &req)
-            {
-                std::string response_body = R"({
-                    "method": ")" + req.getMethod() +
-                                            R"(",
-                    "path": ")" + req.getPath() +
-                                            R"(",
-                    "received_data": ")" + req.getBody() +
-                                            R"("
-                })";
-                return http::HttpResponse::Ok()
-                    .withBody(response_body, "application/json");
-            },
-            false};
-        server.addHandler(echo_post_route);
-
-        // 需要认证的API端点示例
-        http::HttpServer::Route protected_route{
-            "/api/protected",
-            "GET",
-            [](const http::HttpRequest &req)
-            {
-                return http::HttpResponse::Ok()
-                    .withBody(R"({
-                        "message": "This is a protected endpoint",
-                        "data": "Secret information",
-                        "timestamp": ")" +
-                                  std::to_string(std::time(nullptr)) + R"("
-                    })",
-                              "application/json");
-            },
-            true // 需要认证中间件
-        };
-        server.addHandler(protected_route);
 
         std::cout << "=== SwiftChat 服务器 ===" << std::endl;
         std::cout << "正在启动服务器..." << std::endl;
@@ -190,12 +107,21 @@ int main(int argc, char *argv[])
         std::cout << "\n房间API:" << std::endl;
         std::cout << "  - POST /api/v1/rooms          - 创建房间 (需要认证)" << std::endl;
         std::cout << "  - GET  /api/v1/rooms          - 获取房间列表" << std::endl;
+        std::cout << "  - PATCH /api/v1/rooms/{id}    - 更新房间信息 (需要认证)" << std::endl;
+        std::cout << "  - DELETE /api/v1/rooms/{id}   - 删除房间 (需要认证)" << std::endl;
         std::cout << "  - POST /api/v1/rooms/join     - 加入房间 (需要认证)" << std::endl;
+        std::cout << "  - POST /api/v1/rooms/leave    - 离开房间 (需要认证)" << std::endl;
+        
+        std::cout << "\n用户API:" << std::endl;
+        std::cout << "  - GET  /api/v1/users/me       - 获取当前用户信息 (需要认证)" << std::endl;
+        std::cout << "  - GET  /api/v1/users          - 获取用户列表 (需要认证)" << std::endl;
+        std::cout << "  - GET  /api/v1/users/{id}     - 获取指定用户信息 (需要认证)" << std::endl;
+        std::cout << "  - GET  /api/v1/users/{id}/status - 获取用户状态 (需要认证)" << std::endl;
         std::cout << "\n消息API:" << std::endl;
         std::cout << "  - GET  /api/v1/messages       - 获取房间消息 (需要认证)" << std::endl;
         std::cout << "\n系统API:" << std::endl;
-        std::cout << "  - GET  /api/health            - 健康检查" << std::endl;
-        std::cout << "  - GET  /api/info              - 服务器信息" << std::endl;
+        std::cout << "  - GET  /api/v1/health            - 健康检查" << std::endl;
+        std::cout << "  - GET  /api/v1/info              - 服务器信息" << std::endl;
         std::cout << "  - POST /api/echo              - Echo测试" << std::endl;
         std::cout << "  - GET  /api/protected         - 受保护的端点 (需要认证)" << std::endl;
         std::cout << "\n=== WebSocket支持 ===" << std::endl;

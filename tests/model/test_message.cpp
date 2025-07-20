@@ -1,6 +1,6 @@
 #include <gtest/gtest.h>
-#include "../../src/chat/message.hpp"
-#include "../../src/chat/user.hpp"
+#include "../../src/model/message.hpp"
+#include "../../src/model/user.hpp"
 
 // 测试Message对象的基本功能
 TEST(MessageTest, BasicFunctionality) {
@@ -16,7 +16,7 @@ TEST(MessageTest, BasicFunctionality) {
 
 // 测试带发送者信息的Message对象
 TEST(MessageTest, MessageWithSender) {
-    User sender("user_456", "testuser", "testpass", true);
+    User sender("user_456", "testuser", "testpass");
     Message message(2, "room_789", "user_456", "Hello with sender!", 1640995300, sender);
     
     EXPECT_EQ(message.getId(), 2);
@@ -32,7 +32,7 @@ TEST(MessageTest, MessageWithSender) {
 // 测试Message的setter方法
 TEST(MessageTest, SetterMethods) {
     Message message;
-    User sender("user_789", "newsender", "newpass", false);
+    User sender("user_789", "newsender", "newpass");
     
     message.setId(5);
     message.setRoomId("room_abc");
@@ -67,7 +67,7 @@ TEST(MessageTest, ToJsonWithoutSender) {
 
 // 测试Message对象转JSON（含发送者信息）
 TEST(MessageTest, ToJsonWithSender) {
-    User sender("user_json", "jsonuser", "jsonpass", true);
+    User sender("user_json", "jsonuser", "jsonpass");
     Message message(11, "room_json2", "user_json", "JSON test with sender", 1640995600, sender);
     
     json j = message.toJson();
@@ -113,7 +113,6 @@ TEST(MessageTest, FromJsonWithSender) {
         {"id", "user_from_json2"},
         {"username", "jsonuser2"},
         {"password", "jsonpass2"},
-        {"is_online", false}
     };
     
     Message message = Message::fromJson(j);
@@ -142,7 +141,7 @@ TEST(MessageTest, DefaultConstructor) {
 
 // 测试JSON转换的完整循环
 TEST(MessageTest, JsonRoundTrip) {
-    User original_sender("user_roundtrip", "roundtripuser", "roundtrippass", true);
+    User original_sender("user_roundtrip", "roundtripuser", "roundtrippass");
     Message original_message(100, "room_roundtrip", "user_roundtrip", "Roundtrip test", 1640995900, original_sender);
     
     // 转换为JSON

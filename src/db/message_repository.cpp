@@ -86,7 +86,7 @@ std::vector<Message> MessageRepository::getMessages(const std::string &room_id, 
         std::string username = reinterpret_cast<const char *>(sqlite3_column_text(stmt, 4));
         
         // 创建发送者 User 对象
-        User sender(user_id, username, "", false); // 密码留空，在线状态设为false
+        User sender(user_id, username, ""); // 密码留空，在线状态设为false
         
         // 创建 Message 对象，包含发送者信息
         Message message(message_id, room_id, user_id, content, timestamp, sender);
@@ -128,7 +128,7 @@ std::optional<Message> MessageRepository::getMessageById(int64_t message_id)
         std::string username = reinterpret_cast<const char *>(sqlite3_column_text(stmt, 5));
         
         // 创建发送者 User 对象
-        User sender(user_id, username, "", false);
+        User sender(user_id, username, "");
         
         // 创建 Message 对象
         Message message(id, room_id, user_id, content, timestamp, sender);

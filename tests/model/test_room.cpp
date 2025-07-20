@@ -1,5 +1,5 @@
 #include <gtest/gtest.h>
-#include "../../src/chat/room.hpp"
+#include "../../src/model/room.hpp"
 
 // 测试Room对象的基本功能
 TEST(RoomTest, BasicFunctionality) {

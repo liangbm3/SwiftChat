@@ -1,23 +1,17 @@
-#include "service/auth_service.hpp"
-#include "service/user_status_manager.hpp"
-#include "db/database_manager.hpp"
-#include "http/http_server.hpp"
-#include "http/http_request.hpp"
-#include "http/http_response.hpp"
+#include "auth_service.hpp"
+#include "../http/http_server.hpp"
+#include "../db/database_manager.hpp"
+#include "../model/user.hpp"
+#include "../utils/logger.hpp"
+#include "../utils/jwt_utils.hpp"
+#include "../middleware/auth_middleware.hpp"
 #include <nlohmann/json.hpp>
+#include <random>
 #include <jwt-cpp/jwt.h>
-#include <chrono>
-#include <cstdlib>          // 用于 getenv
-#include "utils/logger.hpp" // 日志记录工具
 
 using json = nlohmann::json;
 
-AuthService::AuthService(DatabaseManager &db_manager) : db_manager_(db_manager) {}
-
-void AuthService::setStatusManager(std::shared_ptr<UserStatusManager> status_manager)
-{
-    status_manager_ = status_manager;
-}
+AuthService::AuthService(DatabaseManager& db_manager) : db_manager_(db_manager) {}
 
 void AuthService::registerRoutes(http::HttpServer &server)
 {
@@ -257,12 +251,6 @@ http::HttpResponse AuthService::createAndSignToken(const User &user, bool is_reg
         }}
     };
     
-    // 更新用户在线状态（登录或注册都视为上线）
-    if (status_manager_) {
-        status_manager_->userLogin(user.getUsername(), "http");
-        LOG_INFO << "Updated online status for user: " << user.getUsername();
-    }
-    
     // 根据操作类型返回适当的状态码
     if (is_registration) {
         return http::HttpResponse::Created().withJsonBody(response_json); // 201 Created for registration
@@ -295,12 +283,6 @@ http::HttpResponse AuthService::logoutUser(const http::HttpRequest &request)
             return http::HttpResponse::Unauthorized().withJsonBody(error_response);
         }
         std::string username = std::string(*username_header);
-
-        // 更新用户离线状态
-        if (status_manager_) {
-            status_manager_->userLogout(username);
-            LOG_INFO << "Updated offline status for user: " << username;
-        }
 
         json response_json = {
             {"success", true},

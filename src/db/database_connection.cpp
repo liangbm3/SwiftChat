@@ -68,8 +68,7 @@ bool DatabaseConnection::createUsersTable()
         "id TEXT PRIMARY KEY,"
         "username TEXT UNIQUE NOT NULL,"
         "password_hash TEXT NOT NULL,"
-        "created_at INTEGER NOT NULL,"
-        "is_online INTEGER DEFAULT 0);";
+        "created_at INTEGER NOT NULL);";
     
     return executeQuery(create_users_table);
 }

@@ -83,7 +83,12 @@ bool UserRepository::validateUser(const std::string &username, const std::string
 
 bool UserRepository::userExists(const std::string &user_id)
 {
-    if (!db_conn_->isConnected()) return false;
+    LOG_INFO << "userExists: Checking existence for user_id: " << user_id;
+    
+    if (!db_conn_->isConnected()) {
+        LOG_ERROR << "userExists: Database not connected";
+        return false;
+    }
     
     std::lock_guard<std::recursive_mutex> lock(db_conn_->getMutex());
     const char *sql = "SELECT COUNT(*) FROM users WHERE id = ?;";
@@ -91,7 +96,7 @@ bool UserRepository::userExists(const std::string &user_id)
     
     if (sqlite3_prepare_v2(db_conn_->getDb(), sql, -1, &stmt, nullptr) != SQLITE_OK)
     {
-        LOG_ERROR << "Failed to prepare statement: " << sqlite3_errmsg(db_conn_->getDb());
+        LOG_ERROR << "userExists: Failed to prepare statement: " << sqlite3_errmsg(db_conn_->getDb());
         return false;
     }
 
@@ -100,33 +105,18 @@ bool UserRepository::userExists(const std::string &user_id)
     bool exists = false;
     if (sqlite3_step(stmt) == SQLITE_ROW)
     {
-        exists = (sqlite3_column_int(stmt, 0) > 0);
+        int count = sqlite3_column_int(stmt, 0);
+        exists = (count > 0);
+        LOG_INFO << "userExists: Found " << count << " users with id: " << user_id;
     }
-
-    sqlite3_finalize(stmt);
-    return exists;
-}
-
-bool UserRepository::setUserOnlineStatus(const std::string &user_id, bool is_online)
-{
-    if (!db_conn_->isConnected()) return false;
-    
-    std::lock_guard<std::recursive_mutex> lock(db_conn_->getMutex());
-    const char *sql = "UPDATE users SET is_online = ? WHERE id = ?;";
-    sqlite3_stmt *stmt;
-
-    if (sqlite3_prepare_v2(db_conn_->getDb(), sql, -1, &stmt, nullptr) != SQLITE_OK)
+    else
     {
-        LOG_ERROR << "Failed to prepare statement: " << sqlite3_errmsg(db_conn_->getDb());
-        return false;
+        LOG_ERROR << "userExists: Failed to execute query for user_id: " << user_id;
     }
 
-    sqlite3_bind_int(stmt, 1, is_online ? 1 : 0);
-    sqlite3_bind_text(stmt, 2, user_id.c_str(), -1, SQLITE_STATIC);
-
-    bool success = (sqlite3_step(stmt) == SQLITE_DONE);
     sqlite3_finalize(stmt);
-    return success;
+    LOG_INFO << "userExists: Result for user_id " << user_id << " is " << (exists ? "true" : "false");
+    return exists;
 }
 
 
@@ -136,7 +126,7 @@ std::vector<User> UserRepository::getAllUsers() const
     if (!db_conn_->isConnected()) return users;
     
     std::lock_guard<std::recursive_mutex> lock(db_conn_->getMutex());
-    const char *sql = "SELECT id, username, password_hash, is_online FROM users;";
+    const char *sql = "SELECT id, username, password_hash FROM users;";
     sqlite3_stmt *stmt;
 
     if (sqlite3_prepare_v2(db_conn_->getDb(), sql, -1, &stmt, nullptr) != SQLITE_OK)
@@ -150,10 +140,7 @@ std::vector<User> UserRepository::getAllUsers() const
         const char *id = reinterpret_cast<const char *>(sqlite3_column_text(stmt, 0));
         const char *username = reinterpret_cast<const char *>(sqlite3_column_text(stmt, 1));
         const char *password = reinterpret_cast<const char *>(sqlite3_column_text(stmt, 2));
-        bool is_online = sqlite3_column_int(stmt, 3) > 0;
-
-        User user(std::string(id), std::string(username), std::string(password), is_online);
-        users.push_back(user);
+        users.emplace_back(std::string(id), std::string(username), std::string(password));
     }
 
     sqlite3_finalize(stmt);
@@ -165,7 +152,7 @@ std::optional<User> UserRepository::getUserById(const std::string &user_id) cons
     if (!db_conn_->isConnected()) return std::nullopt;
 
     std::lock_guard<std::recursive_mutex> lock(db_conn_->getMutex());
-    const char *sql = "SELECT id, username, password_hash, is_online FROM users WHERE id = ?;";
+    const char *sql = "SELECT id, username, password_hash FROM users WHERE id = ?;";
     sqlite3_stmt *stmt;
 
     if (sqlite3_prepare_v2(db_conn_->getDb(), sql, -1, &stmt, nullptr) != SQLITE_OK)
@@ -179,16 +166,17 @@ std::optional<User> UserRepository::getUserById(const std::string &user_id) cons
     if (sqlite3_step(stmt) == SQLITE_ROW)
     {
         //确定找到了一行数据时，才构造 User 对象
-        const char *id = reinterpret_cast<const char *>(sqlite3_column_text(stmt, 0));
-        const char *username = reinterpret_cast<const char *>(sqlite3_column_text(stmt, 1));
-        const char *password = reinterpret_cast<const char *>(sqlite3_column_text(stmt, 2));
-        bool is_online = sqlite3_column_int(stmt, 3) > 0;
+        const unsigned char *id_col = sqlite3_column_text(stmt, 0);
+        const unsigned char *username_col = sqlite3_column_text(stmt, 1);
+        const unsigned char *password_col = sqlite3_column_text(stmt, 2);
+
+        std::string id_str = id_col ? std::string(reinterpret_cast<const char*>(id_col)) : "";
+        std::string username_str = username_col ? std::string(reinterpret_cast<const char*>(username_col)) : "";
+        std::string password_str = password_col ? std::string(reinterpret_cast<const char*>(password_col)) : "";
 
         // 构造并返回User对象。C++会自动将其包装在std::optional中
-        User found_user(std::string(id), std::string(username), std::string(password),
-                        is_online);
         sqlite3_finalize(stmt);
-        return found_user;
+        return User(id_str, username_str, password_str);
     }
     else
     {
@@ -203,28 +191,29 @@ std::optional<User> UserRepository::getUserByUsername(const std::string &usernam
     if (!db_conn_->isConnected()) return std::nullopt;
 
     std::lock_guard<std::recursive_mutex> lock(db_conn_->getMutex());
-    const char *sql = "SELECT id, username, password_hash, is_online FROM users WHERE username = ?;";
+    const char *sql = "SELECT id, username, password_hash FROM users WHERE username = ?;";
     sqlite3_stmt *stmt;
 
     if (sqlite3_prepare_v2(db_conn_->getDb(), sql, -1, &stmt, nullptr) != SQLITE_OK)
     {
         LOG_ERROR << "Failed to prepare statement: " << sqlite3_errmsg(db_conn_->getDb());
-        return User();
+        return std::nullopt;
     }
 
     sqlite3_bind_text(stmt, 1, username.c_str(), -1, SQLITE_STATIC);
 
     if (sqlite3_step(stmt) == SQLITE_ROW)
     {
-        const char *id = reinterpret_cast<const char *>(sqlite3_column_text(stmt, 0));
-        const char *username_col = reinterpret_cast<const char *>(sqlite3_column_text(stmt, 1));
-        const char *password = reinterpret_cast<const char *>(sqlite3_column_text(stmt, 2));
-        bool is_online = sqlite3_column_int(stmt, 3) > 0;
+        const unsigned char *id_col = sqlite3_column_text(stmt, 0);
+        const unsigned char *username_col = sqlite3_column_text(stmt, 1);
+        const unsigned char *password_col = sqlite3_column_text(stmt, 2);
 
-       User found_user(std::string(id), std::string(username_col), std::string(password),
-                        is_online);
+        std::string id_str = id_col ? std::string(reinterpret_cast<const char*>(id_col)) : "";
+        std::string username_str = username_col ? std::string(reinterpret_cast<const char*>(username_col)) : "";
+        std::string password_str = password_col ? std::string(reinterpret_cast<const char*>(password_col)) : "";
+
         sqlite3_finalize(stmt);
-        return found_user;
+        return User(id_str, username_str, password_str);
     }
     else
     {

@@ -13,7 +13,6 @@
 
 // 前向声明
 class DatabaseManager;
-class UserStatusManager;
 
 using websocket_server = websocketpp::server<websocketpp::config::asio>;
 using connection_hdl = websocketpp::connection_hdl;
@@ -34,7 +33,7 @@ struct ConnectionHdlEqual {
 class WebSocketServer
 {
 public:
-    explicit WebSocketServer(DatabaseManager& db_manager, std::shared_ptr<UserStatusManager> status_manager);
+    explicit WebSocketServer(DatabaseManager& db_manager);
     ~WebSocketServer();
 
     // 在指定端口启动WebSocket服务器
@@ -79,9 +78,6 @@ private:
     
     // 数据库管理器引用
     DatabaseManager& db_manager_;
-    
-    // 用户状态管理器
-    std::shared_ptr<UserStatusManager> status_manager_;
     
     // 用户和连接管理
     std::unordered_map<std::string, connection_hdl> user_connections_; // 用户ID到连接句柄的映射

@@ -1,5 +1,4 @@
 #include "user_service.hpp"
-#include "service/user_status_manager.hpp"
 #include "db/database_manager.hpp"
 #include "http/http_server.hpp"
 #include "http/http_request.hpp"
@@ -17,11 +16,6 @@ using json = nlohmann::json;
 
 UserService::UserService(DatabaseManager &db_manager) : db_manager_(db_manager) {}
 
-void UserService::setStatusManager(std::shared_ptr<UserStatusManager> status_manager)
-{
-    status_manager_ = status_manager;
-}
-
 void UserService::registerRoutes(http::HttpServer &server)
 {
     // 注册获取当前用户信息的路由
@@ -29,14 +23,6 @@ void UserService::registerRoutes(http::HttpServer &server)
         .path = "/api/v1/users/me",
         .method = "GET",
         .handler = [this](const http::HttpRequest &request) { return handleGetCurrentUser(request); },
-        .use_auth_middleware = true
-    });
-
-    // 注册获取在线用户列表的路由 (必须在 users/{userId} 之前)
-    server.addHandler({
-        .path = "/api/v1/users/online",
-        .method = "GET",
-        .handler = [this](const http::HttpRequest &request) { return handleGetOnlineUsers(request); },
         .use_auth_middleware = true
     });
 
@@ -310,85 +296,6 @@ http::HttpResponse UserService::handleGetUserById(const http::HttpRequest &reque
     }
 }
 
-http::HttpResponse UserService::handleGetOnlineUsers(const http::HttpRequest &request)
-{
-    auto user_id_opt = getUserIdFromRequest(request);
-    if (!user_id_opt)
-    {
-        LOG_ERROR << "Failed to get user ID from request.";
-        json error_response = {
-            {"success", false},
-            {"message", "Authentication required"},
-            {"error", "User is not authenticated"}
-        };
-        return http::HttpResponse::Unauthorized().withJsonBody(error_response);
-    }
-
-    try
-    {
-        if (!status_manager_)
-        {
-            LOG_WARN << "UserStatusManager not available";
-            json error_response = {
-                {"success", false},
-                {"message", "User status service unavailable"},
-                {"error", "Status manager not initialized"}
-            };
-            return http::HttpResponse::InternalError().withJsonBody(error_response);
-        }
-
-        auto online_user_ids = status_manager_->getOnlineUsers();
-        auto stats = status_manager_->getOnlineStats();
-
-        // 获取在线用户的详细信息
-        json online_users_array = json::array();
-        for (const std::string& online_user_id : online_user_ids)
-        {
-            auto user_opt = db_manager_.getUserById(online_user_id);
-            if (user_opt)
-            {
-                auto user_json = user_opt->toJson();
-                user_json["is_online"] = true;
-                
-                // 添加在线状态信息
-                auto session = status_manager_->getUserSession(online_user_id);
-                if (session)
-                {
-                    user_json["connection_type"] = session->connection_type;
-                    auto duration = status_manager_->getOnlineDuration(online_user_id);
-                    user_json["online_duration_seconds"] = duration.count();
-                }
-                
-                online_users_array.push_back(user_json);
-            }
-        }
-
-        json response_data = {
-            {"success", true},
-            {"message", "Online users retrieved successfully"},
-            {"data", {
-                {"users", online_users_array},
-                {"stats", {
-                    {"total_online", stats.total_online},
-                    {"websocket_connections", stats.websocket_connections},
-                    {"http_sessions", stats.http_sessions}
-                }}
-            }}
-        };
-        return http::HttpResponse::Ok().withJsonBody(response_data);
-    }
-    catch (const std::exception& e)
-    {
-        LOG_ERROR << "Failed to retrieve online users: " << e.what();
-        json error_response = {
-            {"success", false},
-            {"message", "Failed to retrieve online users"},
-            {"error", e.what()}
-        };
-        return http::HttpResponse::InternalError().withJsonBody(error_response);
-    }
-}
-
 http::HttpResponse UserService::handleGetUserStatus(const http::HttpRequest &request)
 {
     auto user_id_opt = getUserIdFromRequest(request);
@@ -435,36 +342,8 @@ http::HttpResponse UserService::handleGetUserStatus(const http::HttpRequest &req
 
         json status_data = {
             {"user_id", target_user_id},
-            {"username", user_opt->getUsername()},
-            {"is_online", false},
-            {"connection_type", ""},
-            {"online_duration_seconds", 0},
-            {"last_activity", ""}
+            {"username", user_opt->getUsername()}
         };
-
-        if (status_manager_)
-        {
-            bool is_online = status_manager_->isUserOnline(target_user_id);
-            status_data["is_online"] = is_online;
-
-            if (is_online)
-            {
-                auto session = status_manager_->getUserSession(target_user_id);
-                if (session)
-                {
-                    status_data["connection_type"] = session->connection_type;
-                    auto duration = status_manager_->getOnlineDuration(target_user_id);
-                    status_data["online_duration_seconds"] = duration.count();
-                    
-                    // 转换时间为ISO 8601字符串格式
-                    auto last_activity = status_manager_->getLastActivity(target_user_id);
-                    auto time_t = std::chrono::system_clock::to_time_t(last_activity);
-                    std::ostringstream oss;
-                    oss << std::put_time(std::gmtime(&time_t), "%Y-%m-%dT%H:%M:%SZ");
-                    status_data["last_activity"] = oss.str();
-                }
-            }
-        }
 
         json response_data = {
             {"success", true},

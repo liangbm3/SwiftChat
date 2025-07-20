@@ -35,11 +35,6 @@ bool DatabaseManager::userExists(const std::string &user_id)
     return user_repo_ ? user_repo_->userExists(user_id) : false;
 }
 
-bool DatabaseManager::setUserOnlineStatus(const std::string &user_id, bool is_online)
-{
-    return user_repo_ ? user_repo_->setUserOnlineStatus(user_id, is_online) : false;
-}
-
 std::vector<User> DatabaseManager::getAllUsers()
 {
     return user_repo_ ? user_repo_->getAllUsers() : std::vector<User>();

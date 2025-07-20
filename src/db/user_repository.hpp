@@ -16,9 +16,6 @@ public:
     bool createUser(const std::string &username, const std::string &password_hash);// 创建用户
     bool validateUser(const std::string &username, const std::string &password_hash);// 验证用户
     bool userExists(const std::string &user_id);// 根据ID检查用户是否存在
-
-    // 用户状态管理
-    bool setUserOnlineStatus(const std::string &user_id, bool is_online);// 根据ID设置用户在线状态
     
     // 用户查询
     std::vector<User> getAllUsers() const;// 获取所有用户

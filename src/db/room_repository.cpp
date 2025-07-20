@@ -179,19 +179,19 @@ std::optional<Room> RoomRepository::getRoomById(const std::string &room_id) cons
         const unsigned char* creator_id_col = sqlite3_column_text(stmt, 3);
         int64_t created_at_col = sqlite3_column_int64(stmt, 4);
 
-        LOG_INFO << "getRoomById: id=" << (id_col ? (const char*)id_col : "NULL") 
-                 << ", name=" << (name_col ? (const char*)name_col : "NULL")
-                 << ", desc=" << (desc_col ? (const char*)desc_col : "NULL")
-                 << ", creator=" << (creator_id_col ? (const char*)creator_id_col : "NULL");
+        // 安全地转换字符串，确保非 NULL
+        std::string id_str = id_col ? std::string(reinterpret_cast<const char*>(id_col)) : "";
+        std::string name_str = name_col ? std::string(reinterpret_cast<const char*>(name_col)) : "";
+        std::string desc_str = desc_col ? std::string(reinterpret_cast<const char*>(desc_col)) : "";
+        std::string creator_id_str = creator_id_col ? std::string(reinterpret_cast<const char*>(creator_id_col)) : "";
+
+        LOG_INFO << "getRoomById: id=" << id_str 
+                 << ", name=" << name_str
+                 << ", desc=" << desc_str
+                 << ", creator=" << creator_id_str;
 
         // 创建Room对象
-        Room room(
-            reinterpret_cast<const char*>(id_col),
-            reinterpret_cast<const char*>(name_col),
-            desc_col ? reinterpret_cast<const char*>(desc_col) : "",
-            reinterpret_cast<const char*>(creator_id_col),
-            created_at_col
-        );
+        Room room(id_str, name_str, desc_str, creator_id_str, created_at_col);
 
         LOG_INFO << "getRoomById constructed Room: " << room.toJson().dump();
 
@@ -246,7 +246,7 @@ std::vector<nlohmann::json> RoomRepository::getRoomMembers(const std::string &ro
     std::lock_guard<std::recursive_mutex> lock(db_conn_->getMutex());
 
     // 使用 JOIN 查询，同时从 room_members 和 users 表中获取信息
-    const char *sql = "SELECT u.id, u.username, u.is_online, rm.joined_at FROM room_members rm "
+    const char *sql = "SELECT u.id, u.username, rm.joined_at FROM room_members rm "
                       "JOIN users u ON rm.user_id = u.id WHERE rm.room_id = ?;";
     sqlite3_stmt *stmt;
 
@@ -262,13 +262,11 @@ std::vector<nlohmann::json> RoomRepository::getRoomMembers(const std::string &ro
     {
         const char *user_id = reinterpret_cast<const char *>(sqlite3_column_text(stmt, 0));
         const char *username = reinterpret_cast<const char *>(sqlite3_column_text(stmt, 1));
-        bool is_online = sqlite3_column_int(stmt, 2) > 0;
-        int64_t joined_at = sqlite3_column_int64(stmt, 3);
+        int64_t joined_at = sqlite3_column_int64(stmt, 2);
 
         nlohmann::json member = {
             {"id", user_id},
             {"username", username},
-            {"is_online", is_online},
             {"joined_at", joined_at}
         };
         members.push_back(member);
