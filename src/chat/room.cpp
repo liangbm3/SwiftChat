@@ -13,11 +13,22 @@ json Room::toJson() const
 
 Room Room::fromJson(const json &j)
 {
-    return Room(
-        j.at("id").get<std::string>(),
-        j.at("name").get<std::string>(),
-        j.value("description", ""), // 描述可能为空，使用默认值
-        j.at("creator_id").get<std::string>(),
-        j.at("created_at").get<int64_t>()
-    );
+    Room room;
+    
+    if (j.contains("id") && j["id"].is_string())
+        room.id_ = j["id"];
+    
+    if (j.contains("name") && j["name"].is_string())
+        room.name_ = j["name"];
+    
+    if (j.contains("description") && j["description"].is_string())
+        room.description_ = j["description"];
+    
+    if (j.contains("creator_id") && j["creator_id"].is_string())
+        room.creator_id_ = j["creator_id"];
+    
+    if (j.contains("created_at") && j["created_at"].is_number_integer())
+        room.created_at_ = j["created_at"];
+    
+    return room;
 }
