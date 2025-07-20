@@ -1,12 +1,13 @@
 #include "websocket_server.hpp"
 #include "utils/logger.hpp"
+#include "db/database_manager.hpp"
 #include <jwt-cpp/jwt.h>
 #include <nlohmann/json.hpp>
 #include <ctime>
 
 using json = nlohmann::json;
 
-WebSocketServer::WebSocketServer()
+WebSocketServer::WebSocketServer(DatabaseManager& db_manager) : db_manager_(db_manager)
 {
     // 关闭websocketpp的日志
     server_.clear_access_channels(websocketpp::log::alevel::all);
@@ -392,6 +393,20 @@ void WebSocketServer::handle_chat_message(connection_hdl hdl, const std::string&
         }
         
         std::string room_id = current_room_it->second;
+        
+        // 保存消息到数据库
+        try
+        {
+            int64_t timestamp = std::time(nullptr);
+            db_manager_.saveMessage(room_id, user_id, content, timestamp);
+            LOG_INFO << "Message saved to database from user " << user_id << " in room " << room_id;
+        }
+        catch (const std::exception& e)
+        {
+            LOG_ERROR << "Failed to save message to database: " << e.what();
+            send_error(hdl, "Failed to save message");
+            return;
+        }
         
         // 构造聊天消息
         json chat_msg = {
