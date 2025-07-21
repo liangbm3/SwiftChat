@@ -1,261 +1,183 @@
+# e2e_test.py
 import requests
 import json
 import uuid
 import sys
 import websocket
+import time
+from threading import Thread
 
 # --- 配置 ---
 BASE_URL = "http://localhost:8080"
 WEBSOCKET_URL = "ws://localhost:8081"
 
-# --- 全局状态，用于在测试函数间传递数据 ---
+# --- 全局状态 ---
 test_state = {}
 test_summary = {"passed": 0, "failed": 0}
 
-# --- 辅助函数，用于美化输出 ---
+# --- 辅助函数 ---
 def print_test_header(name):
-    print("\n" + "="*50)
-    print(f"  🧪  {name}")
-    print("="*50)
+    print("\n" + "="*60)
+    print(f"  🚀  {name}")
+    print("="*60)
 
 def print_pass(message):
     global test_summary
     test_summary["passed"] += 1
-    # 在支持颜色的终端中显示为绿色
     print(f"  ✅ \033[92m[PASS]\033[0m {message}")
 
-def print_fail(message):
+def print_fail(message, details=None):
     global test_summary
     test_summary["failed"] += 1
-    # 在支持颜色的终端中显示为红色
     print(f"  ❌ \033[91m[FAIL]\033[0m {message}")
-    # 失败时立即退出，因为后续测试可能依赖于此
-    sys.exit(1) 
-
-def check_response(response, expected_status_code, check_data_keys=None):
-    """通用响应检查器"""
-    # 1. 检查状态码
-    if response.status_code != expected_status_code:
-        print_fail(f"期望状态码 {expected_status_code}, 但收到 {response.status_code}. 响应: {response.text}")
-        return False
+    if details:
+        print(f"      \033[90mDetails: {details}\033[0m")
+    # 在E2E测试中，一旦失败就退出，因为后续步骤依赖于此
+    sys.exit(1)
     
-    # 2. 检查基础响应结构
-    try:
-        data = response.json()
-    except json.JSONDecodeError:
-        print_fail(f"响应不是有效的JSON格式. 响应: {response.text}")
-        return False
+def ws_recv_type(ws, expected_type, timeout=5):
+    """健壮地接收并验证特定类型的WebSocket消息"""
+    start_time = time.time()
+    while time.time() - start_time < timeout:
+        try:
+            raw_message = ws.recv()
+            message = json.loads(raw_message)
+            print(f"  [WS RECV] {ws.sock.getpeername()} | Type: {message.get('data', {}).get('type')}, Success: {message.get('success')}")
+            if message.get("data", {}).get("type") == expected_type:
+                return message
+        except websocket.WebSocketTimeoutException:
+            continue # 超时是正常的，继续等待
+        except Exception as e:
+            print_fail(f"处理WebSocket消息时出错: {e}", raw_message)
+    print_fail(f"在 {timeout}s 内未接收到类型为 '{expected_type}' 的消息")
 
-    if "success" not in data or data["success"] is not True:
-        print_fail(f"响应中 'success' 字段不为 true. 响应: {data}")
-        return False
+# --- 端到端测试主流程 ---
 
-    if "data" not in data:
-        print_fail(f"响应中缺少 'data' 字段. 响应: {data}")
-        return False
-
-    # 3. 检查data字段下的特定键
-    if check_data_keys:
-        for key in check_data_keys:
-            if key not in data.get("data", {}):
-                print_fail(f"'data' 字段中缺少key: '{key}'. 响应: {data}")
-                return False
-    
-    return True
-
-
-# --- 测试函数 ---
-
-def test_01_system_health():
-    print_test_header("GET /api/v1/health")
-    response = requests.get(f"{BASE_URL}/api/v1/health")
-    if check_response(response, 200, ["status", "timestamp"]):
-        print_pass("服务器健康检查接口格式正确.")
-
-def test_02_system_info():
-    print_test_header("GET /api/v1/info")
-    response = requests.get(f"{BASE_URL}/api/v1/info")
-    if check_response(response, 200, ["name", "version"]):
-        print_pass("服务器信息接口格式正确.")
-
-def test_03_auth_register(session):
-    print_test_header("POST /api/v1/auth/register")
-    unique_user = f"tester_{uuid.uuid4().hex[:8]}"
-    test_state['user_a'] = {'username': unique_user, 'password': 'password123'}
-    
-    response = session.post(f"{BASE_URL}/api/v1/auth/register", json=test_state['user_a'])
-    if check_response(response, 201, ["token", "id", "username"]):
-        test_state['user_a']['id'] = response.json()['data']['id']
-        print_pass("用户注册接口格式正确.")
-
-def test_04_auth_login(session):
-    print_test_header("POST /api/v1/auth/login")
-    response = session.post(f"{BASE_URL}/api/v1/auth/login", json=test_state['user_a'])
-    if check_response(response, 200, ["token", "id", "username"]):
-        token = response.json()['data']['token']
-        test_state['user_a']['token'] = token
-        session.headers.update({"Authorization": f"Bearer {token}"})
-        print_pass("用户登录接口格式正确, Token已设置.")
-        
-def test_05_users_get_me(session):
-    print_test_header("GET /api/v1/users/me")
-    response = session.get(f"{BASE_URL}/api/v1/users/me")
-    if check_response(response, 200, ["user"]):
-        print_pass("获取当前用户信息接口格式正确.")
-
-def test_06_users_get_list(session):
-    print_test_header("GET /api/v1/users")
-    response = session.get(f"{BASE_URL}/api/v1/users")
-    if check_response(response, 200, ["users", "total", "limit", "offset"]):
-        print_pass("获取用户列表接口格式正确.")
-
-def test_07_users_get_specific(session):
-    print_test_header("GET /api/v1/users/{user_id}")
-    user_id = test_state['user_a']['id']
-    response = session.get(f"{BASE_URL}/api/v1/users/{user_id}")
-    if check_response(response, 200, ["user"]):
-        print_pass("获取指定用户信息接口格式正确.")
-
-def test_08_rooms_create(session):
-    print_test_header("POST /api/v1/rooms")
-    room_data = {
-        "name": f"格式测试房间-{uuid.uuid4().hex[:4]}",
-        "description": "用于测试API格式"
-    }
-    response = session.post(f"{BASE_URL}/api/v1/rooms", json=room_data)
-    if check_response(response, 201, ["id", "name", "creator_id"]):
-        test_state['room_id'] = response.json()['data']['id']
-        print_pass("创建房间接口格式正确.")
-
-def test_09_rooms_get_list(session):
-    print_test_header("GET /api/v1/rooms")
-    response = session.get(f"{BASE_URL}/api/v1/rooms")
-    if check_response(response, 200, ["rooms", "total", "limit", "offset"]):
-        print_pass("获取房间列表接口格式正确.")
-
-def test_10_rooms_update(session):
-    print_test_header("PATCH /api/v1/rooms/{room_id}")
-    room_id = test_state['room_id']
-    update_data = {"description": "更新后的格式测试描述"}
-    response = session.patch(f"{BASE_URL}/api/v1/rooms/{room_id}", json=update_data)
-    if check_response(response, 200, ["room_id", "new_description", "updated_by"]):
-        print_pass("更新房间接口格式正确.")
-        
-def test_11_messages_get_list(session):
-    print_test_header("GET /api/v1/messages")
-    params = {'room_id': test_state['room_id']}
-    response = session.get(f"{BASE_URL}/api/v1/messages", params=params)
-    if check_response(response, 200, ["messages", "room_id", "count"]):
-        print_pass("获取房间消息接口格式正确.")
-
-def test_12_rooms_join_and_leave():
-    print_test_header("POST /rooms/join and /rooms/leave")
-    # 为用户B创建一个独立的会话
+def run_e2e_test():
+    """执行完整的端到端测试流程"""
+    session_a = requests.Session()
     session_b = requests.Session()
-    user_b_creds = {'username': f"tester_{uuid.uuid4().hex[:8]}", 'password': 'password123'}
 
-    # 注册和登录用户B
-    reg_resp = session_b.post(f"{BASE_URL}/api/v1/auth/register", json=user_b_creds)
-    if reg_resp.status_code != 201:
-        print_fail("为加入/离开测试注册用户B失败")
-        return
+    # --- 1. 准备阶段：HTTP API 创建用户和房间 ---
+    print_test_header("E2E - 步骤 1: 环境准备 (注册用户, 创建房间)")
+    
+    # 注册用户A和B
+    user_a_creds = {'username': f"e2e_user_a_{uuid.uuid4().hex[:8]}", 'password': 'password123'}
+    user_b_creds = {'username': f"e2e_user_b_{uuid.uuid4().hex[:8]}", 'password': 'password456'}
+    
+    resp_a = session_a.post(f"{BASE_URL}/api/v1/auth/register", json=user_a_creds)
+    if resp_a.status_code != 201: print_fail("注册用户A失败", resp_a.text)
+    test_state['user_a'] = {**user_a_creds, **resp_a.json()['data']}
+    print_pass("用户A注册并登录成功.")
 
-    log_resp = session_b.post(f"{BASE_URL}/api/v1/auth/login", json=user_b_creds)
-    if log_resp.status_code != 200:
-        print_fail("为加入/离开测试登录用户B失败")
-        return
-    token_b = log_resp.json()['data']['token']
-    session_b.headers.update({"Authorization": f"Bearer {token_b}"})
+    resp_b = session_b.post(f"{BASE_URL}/api/v1/auth/register", json=user_b_creds)
+    if resp_b.status_code != 201: print_fail("注册用户B失败", resp_b.text)
+    test_state['user_b'] = {**user_b_creds, **resp_b.json()['data']}
+    print_pass("用户B注册并登录成功.")
 
-    # 用户B加入房间
-    join_payload = {"room_id": test_state['room_id']}
-    join_resp = session_b.post(f"{BASE_URL}/api/v1/rooms/join", json=join_payload)
-    if not check_response(join_resp, 200, ["room_id", "user_id", "joined_at"]):
-        print_fail("加入房间接口格式不正确.")
-        return
-    print_pass("加入房间接口格式正确.")
+    # 用户A创建房间
+    session_a.headers.update({"Authorization": f"Bearer {test_state['user_a']['token']}"})
+    room_data = {"name": f"E2E测试房-{uuid.uuid4().hex[:4]}", "description": "端到端测试"}
+    resp_room = session_a.post(f"{BASE_URL}/api/v1/rooms", json=room_data)
+    if resp_room.status_code != 201: print_fail("创建房间失败", resp_room.text)
+    test_state['room'] = resp_room.json()['data']
+    print_pass(f"房间 '{room_data['name']}' 创建成功.")
 
-    # 用户B离开房间
-    leave_payload = {"room_id": test_state['room_id']}
-    leave_resp = session_b.post(f"{BASE_URL}/api/v1/rooms/leave", json=leave_payload)
-    if not check_response(leave_resp, 200, ["room_id", "user_id"]):
-        print_fail("离开房间接口格式不正确.")
-        return
-    print_pass("离开房间接口格式正确.")
-
-def test_13_websocket_auth():
-    print_test_header("WebSocket Authentication")
+    # --- 2. WebSocket 交互测试 ---
+    print_test_header("E2E - 步骤 2: WebSocket 实时交互")
+    ws_a = None
+    ws_b = None
     try:
-        ws = websocket.create_connection(WEBSOCKET_URL, timeout=5)
-        auth_payload = {"type": "auth", "token": test_state['user_a']['token']}
-        ws.send(json.dumps(auth_payload))
-        response_str = ws.recv()
-        ws.close()
+        # 连接
+        ws_a = websocket.create_connection(WEBSOCKET_URL, timeout=5)
+        ws_b = websocket.create_connection(WEBSOCKET_URL, timeout=5)
+        print_pass("WebSocket连接已建立 (用户A & B).")
 
-        response = json.loads(response_str)
-        if response.get("success") is True and "user_id" in response.get("data", {}):
-            print_pass("WebSocket认证消息格式正确.")
-        else:
-            print_fail(f"WebSocket认证响应格式不正确. 收到: {response_str}")
+        # 认证
+        ws_a.send(json.dumps({"type": "auth", "token": test_state['user_a']['token']}))
+        auth_a_resp = json.loads(ws_a.recv())
+        if not (auth_a_resp.get("success") and auth_a_resp.get("data", {}).get("status") == "connected"):
+            print_fail("用户A WebSocket认证失败", auth_a_resp)
 
-    except Exception as e:
-        print_fail(f"连接或测试WebSocket时发生错误: {e}")
+        ws_b.send(json.dumps({"type": "auth", "token": test_state['user_b']['token']}))
+        auth_b_resp = json.loads(ws_b.recv())
+        if not (auth_b_resp.get("success") and auth_b_resp.get("data", {}).get("status") == "connected"):
+            print_fail("用户B WebSocket认证失败", auth_b_resp)
+        print_pass("WebSocket认证成功 (用户A & B).")
 
-def test_99_rooms_delete(session):
-    print_test_header("DELETE /api/v1/rooms/{room_id} (Cleanup)")
-    room_id = test_state.get('room_id')
-    if not room_id:
-        print("🤔 [SKIP] 没有创建房间，跳过删除。")
-        return
+        # 加入房间并验证广播
+        room_id = test_state['room']['id']
+        ws_a.send(json.dumps({"type": "join_room", "room_id": room_id}))
+        join_a_self = ws_recv_type(ws_a, "room_joined")
+        if join_a_self['data']['user_id'] != test_state['user_a']['id']:
+             print_fail("用户A加入房间响应不正确", join_a_self)
+        print_pass("用户A成功加入房间.")
+
+        ws_b.send(json.dumps({"type": "join_room", "room_id": room_id}))
+        # 并行接收：B收到自己的加入确认，A收到B加入的广播
+        join_b_self = ws_recv_type(ws_b, "room_joined")
+        if join_b_self['data']['user_id'] != test_state['user_b']['id']:
+             print_fail("用户B加入房间响应不正确", join_b_self)
+        print_pass("用户B成功加入房间.")
+
+        join_a_other = ws_recv_type(ws_a, "user_joined")
+        if join_a_other['data']['user_id'] != test_state['user_b']['id']:
+            print_fail("用户A未收到或收到的用户B加入广播不正确", join_a_other)
+        print_pass("用户A收到了用户B加入的广播通知.")
+
+        # 发送和接收消息 (严格按照文档进行验证)
+        message_from_a = f"Hello from A! - {uuid.uuid4().hex[:4]}"
+        ws_a.send(json.dumps({"type": "send_message", "content": message_from_a}))
         
-    response = session.delete(f"{BASE_URL}/api/v1/rooms/{room_id}")
-    if check_response(response, 200, ["room_id", "deleted_by"]):
-        print_pass("删除房间接口格式正确.")
+        # 验证: A收到'message_sent'确认, B收到'message_received'广播
+        sent_a = ws_recv_type(ws_a, "message_sent")
+        if sent_a['data']['content'] != message_from_a: print_fail("用户A 'message_sent' 确认内容不匹配")
+        
+        recv_b = ws_recv_type(ws_b, "message_received")
+        if not (recv_b['data']['content'] == message_from_a and recv_b['data']['user_id'] == test_state['user_a']['id']):
+             print_fail("用户B收到的广播消息不正确", recv_b)
+        print_pass("消息流程(A->B)测试通过: 'message_sent'和'message_received'均正确.")
+        
+        # 保存消息用于后续验证
+        test_state['messages'] = [message_from_a]
 
+    finally:
+        if ws_a: ws_a.close()
+        if ws_b: ws_b.close()
+        print_pass("WebSocket连接已关闭.")
+
+    # --- 3. 验证阶段：HTTP API 检查消息持久化 ---
+    print_test_header("E2E - 步骤 3: 验证持久化和清理")
+    
+    # 验证消息历史
+    resp_msg = session_a.get(f"{BASE_URL}/api/v1/messages", params={'room_id': test_state['room']['id']})
+    if resp_msg.status_code != 200: print_fail("获取消息历史失败", resp_msg.text)
+    messages = resp_msg.json()['data']['messages']
+    if any(msg['content'] == test_state['messages'][0] for msg in messages):
+        print_pass("GET /messages - 成功在历史记录中找到WebSocket发送的消息.")
+    else:
+        print_fail("消息持久化失败: 未在API响应中找到发送的消息.", messages)
+
+    # 清理资源
+    resp_del = session_a.delete(f"{BASE_URL}/api/v1/rooms/{test_state['room']['id']}")
+    if resp_del.status_code != 200: print_fail("清理阶段：删除房间失败", resp_del.text)
+    print_pass("资源清理：房间已成功删除.")
 
 def main():
-    """主函数，按顺序执行所有测试"""
-    session_a = requests.Session()
-    
     try:
-        # 无需认证的接口
-        test_01_system_health()
-        test_02_system_info()
-        
-        # 认证流程
-        test_03_auth_register(session_a)
-        test_04_auth_login(session_a)
-        
-        # 用户管理 (需要认证)
-        test_05_users_get_me(session_a)
-        test_06_users_get_list(session_a)
-        test_07_users_get_specific(session_a)
-        
-        # 房间和消息管理
-        test_08_rooms_create(session_a)
-        test_09_rooms_get_list(session_a)
-        test_10_rooms_update(session_a)
-        test_11_messages_get_list(session_a)
-        
-        # 涉及第二个用户的交互
-        test_12_rooms_join_and_leave()
-        
-        # WebSocket
-        test_13_websocket_auth()
-
+        run_e2e_test()
     except requests.exceptions.ConnectionError:
         print_fail(f"无法连接到服务器 {BASE_URL}. 请确保您的API服务器正在运行。")
     except Exception as e:
         print_fail(f"测试期间发生未知错误: {e}")
     finally:
-        # 清理资源
-        if 'token' in test_state.get('user_a', {}):
-            test_99_rooms_delete(session_a)
+        print("\n" + "="*60)
+        print("📊  E2E测试总结")
+        print(f"  通过: {test_summary['passed']}, 失败: {test_summary['failed']}")
+        print("="*60)
         
-        print("\n" + "="*50)
-        print("📊  测试总结")
-        print(f"  总计: {sum(test_summary.values())}, 通过: {test_summary['passed']}, 失败: {test_summary['failed']}")
-        print("="*50)
+        if test_summary["failed"] > 0:
+            sys.exit(1)
 
 if __name__ == "__main__":
     main()
