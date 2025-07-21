@@ -1,3 +1,9 @@
 [submodule "third_party/nlohmann"]
 	path = third_party/nlohmann
 	url = https://github.com/nlohmann/json.git
+[submodule "third_party/jwt-cpp"]
+	path = third_party/jwt-cpp
+	url = https://github.com/Thalhammer/jwt-cpp.git
+[submodule "third_party/websocketpp"]
+	path = third_party/websocketpp
+	url = https://github.com/zaphoyd/websocketpp.git
