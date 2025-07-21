@@ -1,6 +1,33 @@
-# SwiftChat 🚀
+<div align="center">
 
-一个基于 C++ 的高性能实时聊天应用，支持多房间聊天、用户认证和消息持久化。
+# SwiftChat 💬
+
+[![Build Status](https://img.shields.io/badge/build-passing-brightgreen)](https://github.com/liangbm3/SwiftChat)
+[![C++17](https://img.shields.io/badge/C%2B%2B-17-blue)](https://en.cppreference.com/w/cpp/17)
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
+[![Platform](https://img.shields.io/badge/platform-Linux-lightgrey)](https://www.linux.org/)
+
+**一个基于 C++ 的高性能实时聊天应用，支持多房间聊天、用户认证和消息持久化。**
+
+
+**🌐 在线体验**: [https://demo.swiftchat.example.com](https://demo.swiftchat.example.com) *(演示站点)*
+
+</div>
+
+## 📋 目录
+
+- [✨ 功能特性](#-功能特性)
+- [📋 系统要求](#-系统要求)  
+- [🚀 快速开始](#-快速开始)
+- [📚 相关文档](#-相关文档)
+- [🏗️ 项目架构](#️-项目架构)
+- [🔧 配置选项](#-配置选项)
+- [🧪 运行测试](#-运行测试)
+- [🔒 安全特性](#-安全特性)
+- [🚀 部署指南](#-部署指南)
+- [📈 更新日志](#-更新日志)
+- [🙏 致谢](#-致谢)
+- [📄 许可证](#-许可证)
 
 ## ✨ 功能特性
 
@@ -8,10 +35,13 @@
 - 💬 **实时聊天** - 基于 WebSocket 的即时消息传递
 - 🏠 **多房间支持** - 创建、加入、管理多个聊天室
 - 💾 **消息持久化** - 使用 SQLite 数据库保存聊天记录
-- 🎨 **现代化 Web UI** - 响应式设计，支持桌面和移动设备
 - 🔄 **自动重连** - 网络中断时自动重新连接
 - ⚡ **高性能** - 多线程架构，支持大量并发连接
 - 🛡️ **线程安全** - 完善的并发控制和错误处理
+- 📡 **RESTful API** - 完整的 REST API 接口
+- 🔧 **中间件支持** - 可扩展的认证中间件
+- 📊 **日志系统** - 完善的日志记录和调试支持
+- ⚙️ **配置灵活** - 支持环境变量和命令行参数配置
 
 ## 📋 系统要求
 
@@ -25,36 +55,79 @@
 - **OpenSSL**: 用于 JWT 签名和验证
 - **pthread**: POSIX 线程库
 
-### 第三方库 (已包含)
+### 第三方库
 - **websocketpp**: WebSocket 服务器实现
-- **nlohmann/json**: JSON 解析库
+- **nlohmann/json**: JSON 解析库  
 - **jwt-cpp**: JWT 处理库
-- **Google Test**: 单元测试框架
+
+### 开发和测试工具
+- **Google Test**: 单元测试框架 (可选，用于测试)
+- **CMake**: 构建系统
+- **Git**: 版本控制系统
 
 ## 🚀 快速开始
 
-### 1. 克隆项目
+### 方法一：一键设置（推荐）
+
+```bash
+# 克隆项目（包含 submodules）
+git clone --recursive https://github.com/liangbm3/SwiftChat.git
+cd SwiftChat
+
+# 设置 JWT 密钥
+export JWT_SECRET="your_super_secret_jwt_key_here"
+
+# 创建构建目录并编译
+mkdir build && cd build
+cmake ..
+make -j$(nproc)
+
+# 启动服务器 (构建后自动安装到 bin 目录)
+cd bin
+./SwiftChat
+```
+
+### 方法二：手动设置
+
+#### 1. 克隆项目
 
 ```bash
 git clone https://github.com/liangbm3/SwiftChat.git
 cd SwiftChat
 ```
 
-### 2. 安装依赖
+#### 2. 安装系统依赖
 
 **Ubuntu/Debian:**
 ```bash
 sudo apt update
-sudo apt install build-essential cmake libsqlite3-dev libssl-dev libgtest-dev
+sudo apt install build-essential cmake libsqlite3-dev libssl-dev
 ```
 
 **CentOS/RHEL:**
 ```bash
-sudo yum groupinstall "Development Tools"
-sudo yum install cmake sqlite-devel openssl-devel gtest-devel
+sudo yum install gcc-c++ cmake sqlite-devel openssl-devel
 ```
 
-### 3. 编译项目
+#### 3. 初始化第三方库
+
+```bash
+# 初始化 Git submodules
+git submodule update --init --recursive
+```
+
+#### 4. 设置环境变量
+
+```bash
+# 设置 JWT 密钥（必需）
+export JWT_SECRET="your_super_secret_jwt_key_here"
+
+# 可选：设置其他环境变量
+export LOG_LEVEL=INFO
+export DB_PATH=./chat.db
+```
+
+#### 5. 编译项目
 
 ```bash
 mkdir build
@@ -63,16 +136,12 @@ cmake ..
 make -j$(nproc)
 ```
 
-### 4. 设置环境变量
+#### 6. 运行应用
 
 ```bash
-# 设置 JWT 密钥 (请使用强密码)
-export JWT_SECRET="your_secret_key_here"
-```
+# 进入 bin 目录
+cd bin
 
-### 5. 运行应用
-
-```bash
 # 启动服务器
 ./SwiftChat
 
@@ -80,9 +149,17 @@ export JWT_SECRET="your_secret_key_here"
 ./SwiftChat --http-port 8080 --ws-port 8081
 ```
 
-### 6. 访问应用
+#### 7. 访问应用
 
 打开浏览器访问: `http://localhost:8080`
+
+## 📚 相关文档
+
+- [API 文档](docs/API.md) - RESTful API 详细说明
+- [数据库设计](docs/database.md) - 数据库结构和设计
+- [HTTP 服务器](docs/http_server.md) - HTTP 服务器实现详解
+- [数据模型](docs/model.md) - 数据模型
+
 
 ## 🏗️ 项目架构
 
@@ -99,26 +176,36 @@ SwiftChat/
 │   ├── db/                # 数据库层
 │   │   ├── database_manager.cpp/hpp
 │   │   ├── database_connection.cpp/hpp
-│   │   └── *_repository.cpp/hpp
+│   │   ├── user_repository.cpp/hpp
+│   │   ├── room_repository.cpp/hpp
+│   │   └── message_repository.cpp/hpp
 │   ├── service/           # 业务逻辑层
 │   │   ├── auth_service.cpp/hpp
+│   │   ├── user_service.cpp/hpp
 │   │   ├── room_service.cpp/hpp
-│   │   └── message_service.cpp/hpp
+│   │   ├── message_service.cpp/hpp
+│   │   └── server_service.cpp/hpp
 │   ├── middleware/        # 中间件
 │   │   └── auth_middleware.cpp/hpp
-│   ├── chat/              # 聊天相关实体
+│   ├── model/             # 数据模型
 │   │   ├── user.cpp/hpp
-│   │   └── room.cpp/hpp
+│   │   ├── room.cpp/hpp
+│   │   └── message.cpp/hpp
 │   └── utils/             # 工具类
 │       ├── logger.cpp/hpp
+│       ├── jwt_utils.cpp/hpp
 │       ├── thread_pool.cpp/hpp
 │       └── timer.cpp/hpp
 ├── static/                # 前端资源
 │   ├── index.html         # 主页面
-│   ├── css/styles.css     # 样式文件
-│   └── js/app.js          # JavaScript 逻辑
+│   └── test.html          # 测试页面
 ├── tests/                 # 单元测试
+│   ├── db/                # 数据库测试
+│   ├── http/              # HTTP 测试
+│   ├── model/             # 模型测试
+│   └── utils/             # 工具测试
 ├── docs/                  # 文档
+├── scripts/               # 测试脚本
 ├── third_party/           # 第三方库
 └── CMakeLists.txt         # 构建配置
 ```
@@ -147,34 +234,16 @@ SwiftChat/
   --version           显示版本信息
 ```
 
-## 📡 API 文档
-
-### REST API
-
-#### 认证接口
-- `POST /api/v1/auth/register` - 用户注册
-- `POST /api/v1/auth/login` - 用户登录
-- `GET /api/protected` - 验证 Token
-
-#### 房间管理
-- `GET /api/v1/rooms` - 获取房间列表
-- `POST /api/v1/rooms` - 创建房间
-- `PUT /api/v1/rooms/:id` - 更新房间信息
-- `DELETE /api/v1/rooms/:id` - 删除房间
-- `POST /api/v1/rooms/join` - 加入房间
-- `POST /api/v1/rooms/leave` - 离开房间
-
-#### 消息接口
-- `GET /api/v1/messages?room_id=:id` - 获取房间消息历史
-
-### WebSocket API
-
-详细的 WebSocket API 文档请参考: [WebSocket API 文档](docs/websocket_api.md)
-
 ## 🧪 运行测试
 
+### 单元测试
+
 ```bash
-# 编译测试
+# 进入构建目录
+cd build/bin
+
+# 编译所有测试 (需要回到上级目录)
+cd ..
 make -j$(nproc)
 
 # 运行所有测试
@@ -183,106 +252,137 @@ ctest --verbose
 # 运行特定测试
 ./tests/test_database_manager
 ./tests/test_http_server
-./tests/test_websocket_basic
+./tests/test_http_request
+./tests/test_http_response
+./tests/test_user
+./tests/test_room
+./tests/test_message
 ```
 
-## 📊 性能指标
+### 测试脚本
 
-- **并发连接**: 支持 10,000+ 并发 WebSocket 连接
-- **消息吞吐量**: 100,000+ 消息/秒
-- **内存使用**: 基础运行约 50MB，每增加 1000 连接约增加 10MB
-- **响应时延**: WebSocket 消息延迟 < 1ms (本地网络)
 
-## 🔍 故障排除
-
-### 常见问题
-
-**1. 编译错误: 找不到头文件**
 ```bash
-# 确保已安装所有依赖
-sudo apt install libsqlite3-dev libssl-dev
+# 运行 API 测试
+python3 scripts/api_test.py
 
-# 检查 CMake 版本
-cmake --version  # 需要 3.10+
+# 运行端到端测试
+python3 scripts/e2e_test.py
+
+# HTTP 接口测试
+k6 run --env BASE_URL=http://localhost:8080 scripts/http_test.js
+
+# WebSocket 连接测试
+k6 run \
+  -e BASE_URL=localhost:8080 \
+  -e WS_URL=localhost:8081 \
+  scripts/websocket_test.js
 ```
 
-**2. 运行时错误: JWT_SECRET 未设置**
-```bash
-export JWT_SECRET="your_secret_key_here"
-```
 
-**3. WebSocket 连接失败**
+
+## 🔒 安全特性
+
+### JWT 认证
+- 使用 RS256 算法签名
+- Token 自动过期机制
+- 安全的密钥管理
+
+### 数据安全
+- SQL 注入防护
+- 输入验证和清理
+- 安全的密码存储
+
+### 网络安全
+- CORS 策略配置
+- 请求频率限制
+- 安全头部设置
+
+### 最佳实践建议
 ```bash
-# 检查防火墙设置
+# 生成强密钥
+export JWT_SECRET=$(openssl rand -base64 64)
+
+# 设置文件权限
+chmod 600 chat.db
+
+# 使用防火墙
+sudo ufw allow 8080
 sudo ufw allow 8081
-
-# 检查端口是否被占用
-netstat -tulpn | grep 8081
 ```
 
-**4. 数据库连接失败**
-```bash
-# 检查 SQLite 安装
-sqlite3 --version
+## 🚀 部署指南
 
-# 检查数据库文件权限
-ls -la chat.db
-```
-
-### 调试模式
+### 生产环境部署
 
 ```bash
-# 启用调试日志
-export LOG_LEVEL=DEBUG
-./SwiftChat
+# 1. 编译 Release 版本
+mkdir build-release
+cd build-release
+cmake -DCMAKE_BUILD_TYPE=Release ..
+make -j$(nproc)
 
-# 使用 GDB 调试
-gdb ./SwiftChat
-(gdb) run
+# 2. 设置生产环境变量
+export JWT_SECRET=$(openssl rand -base64 64)
+export LOG_LEVEL=INFO
+export DB_PATH=/var/lib/swiftchat/chat.db
+
+# 3. 创建数据目录
+sudo mkdir -p /var/lib/swiftchat
+sudo chown $USER:$USER /var/lib/swiftchat
+
+# 4. 进入 bin 目录并启动服务
+cd bin
+./SwiftChat --http-port 80 --ws-port 443
 ```
 
-## 🤝 贡献指南
+### 使用 systemd 管理服务
 
-我们欢迎所有形式的贡献！
+创建服务文件 `/etc/systemd/system/swiftchat.service`:
 
-### 开发流程
+```ini
+[Unit]
+Description=SwiftChat Server
+After=network.target
 
-1. Fork 项目
-2. 创建功能分支: `git checkout -b feature/amazing-feature`
-3. 提交更改: `git commit -m 'Add amazing feature'`
-4. 推送分支: `git push origin feature/amazing-feature`
-5. 提交 Pull Request
+[Service]
+Type=simple
+User=swiftchat
+WorkingDirectory=/opt/swiftchat/bin
+Environment=JWT_SECRET=your_jwt_secret_here
+Environment=LOG_LEVEL=INFO
+Environment=DB_PATH=/var/lib/swiftchat/chat.db
+ExecStart=/opt/swiftchat/bin/SwiftChat --http-port 8080 --ws-port 8081
+Restart=always
+RestartSec=10
 
-### 代码规范
-
-- 使用 C++17 标准
-- 遵循 Google C++ 代码风格
-- 添加适当的注释和文档
-- 编写单元测试覆盖新功能
-
-### 提交信息格式
-
-```
-type(scope): description
-
-feat: 新功能
-fix: 修复 bug
-docs: 文档更新
-style: 代码格式化
-refactor: 重构
-test: 测试相关
-chore: 构建/工具相关
+[Install]
+WantedBy=multi-user.target
 ```
 
-## 📄 许可证
+启动服务:
+```bash
+sudo systemctl enable swiftchat
+sudo systemctl start swiftchat
+sudo systemctl status swiftchat
+```
 
-本项目采用 MIT 许可证 - 详见 [LICENSE](LICENSE) 文件
+## 📈 更新日志
 
-## 📞 联系方式
+查看完整的 [更新日志](CHANGELOG.md) 了解项目的所有变更记录。
 
-- **作者**: liangbm3
-- **项目地址**: https://github.com/liangbm3/SwiftChat
-- **问题反馈**: https://github.com/liangbm3/SwiftChat/issues
+### 最新版本 v1.0.0 (2025-01-21)
+- ✨ 完整的实时聊天功能
+- 🔐 JWT 用户认证系统  
+- 🏠 多房间聊天支持
+- 💾 SQLite 数据库集成
+- 📡 RESTful API 接口
+
+### 即将推出
+- 文件上传和分享
+- 消息加密功能
+- 用户在线状态
+
 
 ## 🙏 致谢
 
@@ -293,16 +393,10 @@ chore: 构建/工具相关
 - [jwt-cpp](https://github.com/Thalhammer/jwt-cpp) - JWT 处理库
 - [Google Test](https://github.com/google/googletest) - 测试框架
 
-## 📈 更新日志
 
-### v1.0.0 (2025-07-20)
-- ✨ 初始版本发布
-- 🔐 实现 JWT 用户认证
-- 💬 实现实时聊天功能
-- 🏠 支持多房间聊天
-- 💾 消息持久化到 SQLite
-- 🎨 现代化 Web 界面
+## 📄 许可证
 
----
+本项目采用 MIT 许可证 - 详见 [LICENSE](LICENSE) 文件
 
-**⭐ 如果这个项目对您有帮助，请给我们一个 Star！**
+
+**⭐ 如果这个项目对您有帮助，请点一个 Star！**
