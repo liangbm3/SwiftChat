@@ -160,11 +160,15 @@ void WebSocketServer::on_close(connection_hdl hdl)
         {
             std::string room_id = room_it->second;
 
+            // 获取用户信息
+            auto user_info = db_manager_.getUserById(user_id);
+            std::string username = user_info ? user_info->getUsername() : user_id;
+
             // 通知房间内其他用户该用户已离开
             json notification = {
                 {"success", true},
                 {"message", "User left room"},
-                {"data", {{"type", "user_left"}, {"user_id", user_id}, {"room_id", room_id}}}};
+                {"data", {{"type", "user_left"}, {"user_id", user_id}, {"username", username}, {"room_id", room_id}}}};
             broadcast_to_room(room_id, notification.dump(), user_id); // 排除自己
 
             // 然后从房间中移除用户
@@ -361,11 +365,15 @@ void WebSocketServer::handle_join_room(connection_hdl hdl, const std::string &us
         {
             std::string old_room_id = current_room_it->second;
 
+            // 获取用户信息
+            auto user_info = db_manager_.getUserById(user_id);
+            std::string username = user_info ? user_info->getUsername() : user_id;
+
             // 通知原房间内其他用户该用户已离开
             json leave_notification = {
                 {"success", true},
                 {"message", "User left room"},
-                {"data", {{"type", "user_left"}, {"user_id", user_id}, {"room_id", old_room_id}}}};
+                {"data", {{"type", "user_left"}, {"user_id", user_id}, {"username", username}, {"room_id", old_room_id}}}};
             broadcast_to_room(old_room_id, leave_notification.dump(), user_id); // 排除自己
 
             // 然后从原房间移除用户
@@ -384,11 +392,15 @@ void WebSocketServer::handle_join_room(connection_hdl hdl, const std::string &us
             {"data", {{"type", "room_joined"}, {"room_id", room_id}, {"user_id", user_id}}}};
         server_.send(hdl, response.dump(), websocketpp::frame::opcode::text);
 
+        // 获取用户信息
+        auto user_info = db_manager_.getUserById(user_id);
+        std::string username = user_info ? user_info->getUsername() : user_id;
+
         // 通知房间内其他用户
         json notification = {
             {"success", true},
             {"message", "User joined room"},
-            {"data", {{"type", "user_joined"}, {"user_id", user_id}, {"room_id", room_id}}}};
+            {"data", {{"type", "user_joined"}, {"user_id", user_id}, {"username", username}, {"room_id", room_id}}}};
         broadcast_to_room(room_id, notification.dump(), user_id); // 排除自己
     }
     catch (const json::exception &e)
@@ -417,11 +429,15 @@ void WebSocketServer::handle_leave_room(connection_hdl hdl, const std::string &u
 
     LOG_INFO << "User " << user_id << " left room: " << room_id;
 
+    // 获取用户信息
+    auto user_info = db_manager_.getUserById(user_id);
+    std::string username = user_info ? user_info->getUsername() : user_id;
+
     // 先通知房间内其他用户，再移除当前用户
     json notification = {
         {"success", true},
         {"message", "User left room"},
-        {"data", {{"type", "user_left"}, {"user_id", user_id}, {"room_id", room_id}}}};
+        {"data", {{"type", "user_left"}, {"user_id", user_id}, {"username", username}, {"room_id", room_id}}}};
     broadcast_to_room(room_id, notification.dump(), user_id); // 排除自己
 
     // 然后移除用户
@@ -468,11 +484,15 @@ void WebSocketServer::handle_chat_message(connection_hdl hdl, const std::string 
             return;
         }
 
+        // 获取用户信息
+        auto user_info = db_manager_.getUserById(user_id);
+        std::string username = user_info ? user_info->getUsername() : user_id;
+
         // 构造聊天消息
         json chat_msg = {
             {"success", true},
             {"message", "Message sent successfully"},
-            {"data", {{"type", "message_received"}, {"user_id", user_id}, {"room_id", room_id}, {"content", content}, {"timestamp", timestamp}}}};
+            {"data", {{"type", "message_received"}, {"user_id", user_id}, {"username", username}, {"room_id", room_id}, {"content", content}, {"timestamp", timestamp}}}};
 
         // 广播到房间内所有用户（包括发送者）
         broadcast_to_room(room_id, chat_msg.dump());
@@ -532,8 +552,8 @@ void WebSocketServer::broadcast_to_room(const std::string &room_id, const std::s
 {
     std::vector<connection_hdl> connections_to_send; // 需要发送的连接
     {
-        // 加上锁，安全地访问共享数据
-        std::lock_guard<std::mutex> lock(connection_mutex_);
+        // // 加上锁，安全地访问共享数据
+        // std::lock_guard<std::mutex> lock(connection_mutex_);
         auto room_it = room_members_.find(room_id);
         if (room_it == room_members_.end())
         {
