@@ -10,7 +10,7 @@
 **一个基于 C++ 的高性能实时聊天应用，支持多房间聊天、用户认证和消息持久化。**
 
 
-**🌐 在线体验**: [https://demo.swiftchat.example.com](https://demo.swiftchat.example.com) *(演示站点)*
+**🌐 在线体验**: [https://swiftchat.demo.liangbm3.site/](https://swiftchat.demo.liangbm3.site/) *(演示站点)*
 
 </div>
 
