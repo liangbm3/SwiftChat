@@ -3,144 +3,869 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>SwiftChat - 实时聊天应用</title>
-    <link rel="stylesheet" href="css/styles.css">
-    <link rel="icon" href="favicon.ico" type="image/x-icon">
+    <title>SwiftChat</title>
+    <style>
+        :root {
+            --primary-color: #007bff;
+            --secondary-color: #6c757d;
+            --bg-color: #f8f9fa;
+            --border-color: #dee2e6;
+            --text-color: #212529;
+            --light-text-color: #ffffff;
+            --error-color: #dc3545;
+            --success-color: #28a745;
+        }
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+            margin: 0;
+            padding: 20px;
+            background-color: var(--bg-color);
+            color: var(--text-color);
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+        }
+        .container {
+            width: 100%;
+            max-width: 1200px;
+            background: var(--light-text-color);
+            border-radius: 8px;
+            box-shadow: 0 4px 8px rgba(0,0,0,0.1);
+            overflow: hidden;
+        }
+        header {
+            background: var(--primary-color);
+            color: var(--light-text-color);
+            padding: 15px 20px;
+            text-align: center;
+        }
+        header h1 { margin: 0; font-size: 1.5em; }
+        main {
+            display: flex;
+            height: 75vh;
+        }
+        .sidebar {
+            width: 30%;
+            border-right: 1px solid var(--border-color);
+            padding: 20px;
+            display: flex;
+            flex-direction: column;
+            gap: 20px;
+        }
+        .chat-area {
+            width: 70%;
+            display: flex;
+            flex-direction: column;
+            height: 100%;
+        }
+        .card {
+            border: 1px solid var(--border-color);
+            border-radius: 5px;
+            padding: 15px;
+        }
+        .card-header {
+            font-weight: bold;
+            margin-bottom: 15px;
+            font-size: 1.1em;
+        }
+        .form-group {
+            margin-bottom: 10px;
+        }
+        .form-group label {
+            display: block;
+            margin-bottom: 5px;
+        }
+        input[type="text"], input[type="password"] {
+            width: calc(100% - 20px);
+            padding: 8px 10px;
+            border: 1px solid var(--border-color);
+            border-radius: 4px;
+        }
+        button {
+            padding: 10px 15px;
+            border: none;
+            border-radius: 4px;
+            background-color: var(--primary-color);
+            color: var(--light-text-color);
+            cursor: pointer;
+            width: 100%;
+            transition: background-color 0.2s;
+        }
+        button:hover {
+            background-color: #0056b3;
+        }
+        button.secondary {
+            background-color: var(--secondary-color);
+        }
+        button.secondary:hover {
+            background-color: #5a6268;
+        }
+        #joined-room-list ul, #available-room-list ul {
+            list-style: none;
+            padding: 0;
+            margin: 0;
+            max-height: 200px;
+            overflow-y: auto;
+        }
+        #joined-room-list li, #available-room-list li {
+            padding: 10px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            border-bottom: 1px solid var(--border-color);
+        }
+        #joined-room-list li:last-child, #available-room-list li:last-child {
+            border-bottom: none;
+        }
+        #joined-room-list button, #available-room-list button {
+            width: auto;
+            padding: 5px 10px;
+            font-size: 0.9em;
+        }
+        .chat-header {
+            padding: 15px 20px;
+            border-bottom: 1px solid var(--border-color);
+            font-weight: bold;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            flex-shrink: 0; /* 防止头部被压缩 */
+            background: white; /* 确保头部有背景色 */
+        }
+        .messages {
+            flex-grow: 1;
+            padding: 20px;
+            overflow-y: auto;
+            background: #fdfdfd;
+            max-height: calc(75vh - 120px); /* 减去聊天头部和输入框的高度 */
+            min-height: 300px;
+        }
+        .message {
+            margin-bottom: 15px;
+        }
+        .message .sender {
+            font-weight: bold;
+            color: var(--primary-color);
+        }
+        .message .timestamp {
+            font-size: 0.8em;
+            color: var(--secondary-color);
+            margin-left: 10px;
+        }
+        .message .content {
+            margin-top: 5px;
+        }
+        .message.system {
+            font-style: italic;
+            text-align: center;
+            color: var(--secondary-color);
+        }
+        .chat-input {
+            display: flex;
+            padding: 15px;
+            border-top: 1px solid var(--border-color);
+            flex-shrink: 0; /* 防止输入框被压缩 */
+            background: white; /* 确保输入框有背景色 */
+        }
+        .chat-input input {
+            flex-grow: 1;
+            margin-right: 10px;
+        }
+        .chat-input button {
+            width: 100px;
+        }
+        #user-info {
+            text-align: center;
+            padding: 10px;
+            background-color: #e9ecef;
+            border-radius: 4px;
+        }
+        #auth-section, #room-management-section {
+            display: block;
+        }
+        #chat-section {
+            display: flex;
+            flex-direction: column;
+            height: 100%;
+        }
+        #chat-section.hidden {
+            display: none !important;
+        }
+        .hidden {
+            display: none !important;
+        }
+        #api-status {
+            margin-top: 10px;
+            padding: 10px;
+            border-radius: 4px;
+        }
+        .status-error {
+            background-color: #f8d7da;
+            color: var(--error-color);
+        }
+        .status-success {
+            background-color: #d4edda;
+            color: var(--success-color);
+        }
+        .disclaimer {
+            background-color: #fff3cd;
+            border: 1px solid #ffeaa7;
+            color: #856404;
+            padding: 15px;
+            margin-bottom: 20px;
+            border-radius: 5px;
+            font-size: 0.9em;
+            line-height: 1.4;
+        }
+        .disclaimer h3 {
+            margin: 0 0 10px 0;
+            font-size: 1em;
+            color: #856404;
+        }
+        .disclaimer a {
+            color: #007bff;
+            text-decoration: none;
+        }
+        .disclaimer a:hover {
+            text-decoration: underline;
+        }
+        .disclaimer ul {
+            margin: 8px 0;
+            padding-left: 20px;
+        }
+        .disclaimer li {
+            margin-bottom: 4px;
+        }
+    </style>
 </head>
 <body>
-    <div id="app">
-        <!-- 登录界面 -->
-        <div id="auth-container" class="container">
-            <div class="auth-card">
-                <h1>SwiftChat</h1>
-                <p class="subtitle">实时聊天应用</p>
+
+    <div class="container">
+        <div class="disclaimer">
+            <h3>⚠️ 免责声明 & 开源信息</h3>
+            <p><strong>GitHub开源地址：</strong> <a href="https://github.com/liangbm3/SwiftChat" target="_blank">https://github.com/liangbm3/SwiftChat</a></p>
+            <p><strong>重要提醒：</strong></p>
+            <ul>
+                <li>🔒 <strong>请勿输入任何隐私信息</strong>（如真实姓名、身份证号、银行卡号、密码等）</li>
+                <li>💾 <strong>数据可能随时丢失</strong> - 这是一个演示项目，不保证数据持久化</li>
+                <li>🧪 <strong>仅供学习和测试使用</strong> - 请勿用于生产环境或重要业务</li>
+                <li>⚔️ <strong>严禁进行任何形式的非法攻击</strong> - 包括但不限于频繁请求、恶意请求、DDoS攻击、SQL注入、XSS攻击等</li>
                 
-                <div class="tab-container">
-                    <button class="tab-btn active" onclick="showLogin()">登录</button>
-                    <button class="tab-btn" onclick="showRegister()">注册</button>
-                </div>
-
-                <!-- 登录表单 -->
-                <form id="login-form" class="auth-form">
-                    <div class="input-group">
-                        <label for="login-username">用户名</label>
-                        <input type="text" id="login-username" required placeholder="请输入用户名">
-                    </div>
-                    <div class="input-group">
-                        <label for="login-password">密码</label>
-                        <input type="password" id="login-password" required placeholder="请输入密码">
-                    </div>
-                    <button type="submit" class="btn-primary">登录</button>
-                </form>
-
-                <!-- 注册表单 -->
-                <form id="register-form" class="auth-form hidden">
-                    <div class="input-group">
-                        <label for="register-username">用户名</label>
-                        <input type="text" id="register-username" required placeholder="请输入用户名">
-                    </div>
-                    <div class="input-group">
-                        <label for="register-password">密码</label>
-                        <input type="password" id="register-password" required placeholder="请输入密码">
-                    </div>
-                    <div class="input-group">
-                        <label for="register-confirm">确认密码</label>
-                        <input type="password" id="register-confirm" required placeholder="请再次输入密码">
-                    </div>
-                    <button type="submit" class="btn-primary">注册</button>
-                </form>
-
-                <div id="auth-message" class="message"></div>
-            </div>
+            </ul>
+            <p>继续使用即表示您已了解并同意以上条款。</p>
         </div>
+        
+        <header>
+            <h1>SwiftChat</h1>
+        </header>
 
-        <!-- 聊天界面 -->
-        <div id="chat-container" class="container hidden">
-            <div class="chat-layout">
-                <!-- 侧边栏 -->
-                <div class="sidebar">
-                    <div class="user-info">
-                        <div class="user-avatar">👤</div>
-                        <div class="user-details">
-                            <div id="current-username" class="username">用户名</div>
-                            <div class="status online">在线</div>
+        <main>
+            <div class="sidebar">
+                <div id="auth-section" class="card">
+                    <div class="card-header">认证</div>
+                    <form id="register-form">
+                        <div class="form-group">
+                            <label for="reg-username">用户名</label>
+                            <input type="text" id="reg-username" required>
                         </div>
-                        <button id="logout-btn" class="btn-logout" title="退出登录">🚪</button>
-                    </div>
-
-                    <div class="room-section">
-                        <div class="section-header">
-                            <h3>聊天房间</h3>
-                            <button id="create-room-btn" class="btn-create" title="创建房间">+</button>
+                        <div class="form-group">
+                            <label for="reg-password">密码</label>
+                            <input type="password" id="reg-password" required>
                         </div>
-                        <div id="room-list" class="room-list">
-                            <!-- 房间列表将在这里动态生成 -->
+                        <button type="submit">注册</button>
+                    </form>
+                    <hr style="margin: 20px 0;">
+                    <form id="login-form">
+                        <div class="form-group">
+                            <label for="login-username">用户名</label>
+                            <input type="text" id="login-username" required>
                         </div>
-                    </div>
+                        <div class="form-group">
+                            <label for="login-password">密码</label>
+                            <input type="password" id="login-password" required>
+                        </div>
+                        <button type="submit">登录</button>
+                    </form>
                 </div>
 
-                <!-- 主聊天区域 -->
-                <div class="main-chat">
-                    <div id="no-room-selected" class="no-room">
-                        <h2>欢迎使用 SwiftChat</h2>
-                        <p>请选择一个房间开始聊天，或创建一个新房间</p>
+                <div id="room-management-section" class="card hidden">
+                    <div id="user-info"></div>
+                    <div class="card-header">我的房间</div>
+                    <div id="joined-room-list">
+                        <ul></ul>
                     </div>
-
-                    <div id="chat-room" class="chat-room hidden">
-                        <div class="room-header">
-                            <h2 id="current-room-name">房间名称</h2>
-                            <div class="room-actions">
-                                <button id="leave-room-btn" class="btn-secondary">离开房间</button>
-                            </div>
-                        </div>
-
-                        <div id="messages-container" class="messages-container">
-                            <!-- 消息将在这里显示 -->
-                        </div>
-
-                        <div class="message-input-container">
-                            <div class="input-group">
-                                <input type="text" id="message-input" placeholder="输入消息..." maxlength="500">
-                                <button id="send-btn" class="btn-send">发送</button>
-                            </div>
-                        </div>
+                    <hr style="margin: 20px 0;">
+                    <div class="card-header">可加入的房间</div>
+                    <div id="available-room-list">
+                        <ul></ul>
                     </div>
+                    <hr style="margin: 20px 0;">
+                    <div class="card-header">创建新房间</div>
+                    <form id="create-room-form">
+                        <div class="form-group">
+                            <label for="room-name">房间名</label>
+                            <input type="text" id="room-name" required>
+                        </div>
+                        <div class="form-group">
+                            <label for="room-desc">描述</label>
+                            <input type="text" id="room-desc">
+                        </div>
+                        <button type="submit">创建房间</button>
+                    </form>
+                </div>
+                 <div id="api-status"></div>
+            </div>
+
+            <div class="chat-area">
+                <div id="chat-section" class="hidden">
+                    <div class="chat-header" id="chat-room-name">
+                        <span>请先加入一个房间</span>
+                        <button id="leave-room-btn" class="secondary" style="float: right; width: auto; padding: 5px 10px; display: none;">离开房间</button>
+                    </div>
+                    <div class="messages" id="messages-container">
+                        </div>
+                    <div class="chat-input">
+                        <form id="send-message-form" style="display: flex; width: 100%;">
+                            <input type="text" id="message-input" placeholder="输入消息..." autocomplete="off" required>
+                            <button type="submit">发送</button>
+                        </form>
+                    </div>
+                </div>
+                <div id="chat-placeholder" class="messages" style="display: flex; align-items: center; justify-content: center; color: var(--secondary-color);">
+                    <p>登录并加入房间后开始聊天</p>
                 </div>
             </div>
-        </div>
-
-        <!-- 创建房间模态框 -->
-        <div id="create-room-modal" class="modal hidden">
-            <div class="modal-content">
-                <div class="modal-header">
-                    <h3>创建新房间</h3>
-                    <button class="modal-close">&times;</button>
-                </div>
-                <form id="create-room-form">
-                    <div class="input-group">
-                        <label for="room-name">房间名称</label>
-                        <input type="text" id="room-name" required placeholder="请输入房间名称" maxlength="50">
-                    </div>
-                    <div class="modal-actions">
-                        <button type="button" class="btn-secondary" onclick="closeCreateRoomModal()">取消</button>
-                        <button type="submit" class="btn-primary">创建房间</button>
-                    </div>
-                </form>
-            </div>
-        </div>
-
-        <!-- 加载遮罩 -->
-        <div id="loading" class="loading hidden">
-            <div class="spinner"></div>
-            <p>连接中...</p>
-        </div>
-
-        <!-- 连接状态指示器 -->
-        <div id="connection-status" class="connection-status hidden">
-            <span id="connection-text">连接中...</span>
-        </div>
+        </main>
     </div>
 
-    <script src="js/app.js"></script>
+<script>
+document.addEventListener('DOMContentLoaded', () => {
+    // API 配置
+    const API_BASE_URL = 'http://localhost:8080';
+    const WEBSOCKET_URL = 'ws://localhost:8081';
+
+    // 全局状态
+    let authToken = null;
+    let currentUserId = null;
+    let currentUsername = null;
+    let currentRoomId = null;
+    let ws = null;
+    let heartbeatInterval = null;
+
+    // DOM 元素
+    const authSection = document.getElementById('auth-section');
+    const roomMgmtSection = document.getElementById('room-management-section');
+    const chatSection = document.getElementById('chat-section');
+    const chatPlaceholder = document.getElementById('chat-placeholder');
+
+    const registerForm = document.getElementById('register-form');
+    const loginForm = document.getElementById('login-form');
+    const createRoomForm = document.getElementById('create-room-form');
+    const sendMessageForm = document.getElementById('send-message-form');
+
+    const userInfoDiv = document.getElementById('user-info');
+    const joinedRoomListUl = document.querySelector('#joined-room-list ul');
+    const availableRoomListUl = document.querySelector('#available-room-list ul');
+    const messagesContainer = document.getElementById('messages-container');
+    const messageInput = document.getElementById('message-input');
+    const chatRoomName = document.getElementById('chat-room-name');
+    const leaveRoomBtn = document.getElementById('leave-room-btn');
+    const apiStatusDiv = document.getElementById('api-status');
+
+    // --- 工具函数 ---
+    function showApiStatus(message, isError = false) {
+        apiStatusDiv.textContent = message;
+        apiStatusDiv.className = isError ? 'status-error' : 'status-success';
+        setTimeout(() => {
+            apiStatusDiv.textContent = '';
+            apiStatusDiv.className = '';
+        }, 5000);
+    }
+
+    function displayMessage(msgData) {
+        const msgDiv = document.createElement('div');
+        msgDiv.classList.add('message');
+        
+        // 处理系统消息（用户加入/离开）
+        if (msgData.type && (msgData.type === 'user_joined' || msgData.type === 'user_left')) {
+            msgDiv.classList.add('system');
+            const action = msgData.type === 'user_joined' ? '加入了房间' : '离开了房间';
+            const displayName = msgData.username || msgData.user_id; // 优先使用用户名，后备用户ID
+            msgDiv.innerHTML = `<p>用户 ${displayName} ${action}</p>`;
+        } else {
+            // 处理普通聊天消息
+            let senderName;
+            if (msgData.username) {
+                // 如果WebSocket消息中包含用户名，优先使用
+                senderName = msgData.username;
+            } else if (msgData.sender && msgData.sender.username) {
+                // 如果是从HTTP API获取的历史消息，使用sender.username
+                senderName = msgData.sender.username;
+            } else if (msgData.user_id === currentUserId) {
+                // 如果是当前用户，使用当前用户名
+                senderName = currentUsername;
+            } else {
+                // 最后的fallback，使用用户ID
+                senderName = msgData.user_id;
+            }
+            
+            msgDiv.innerHTML = `
+                <div class="sender">${senderName}</div>
+                <div class="content">${msgData.content}</div>
+                <div class="timestamp">${new Date(msgData.timestamp * 1000).toLocaleString()}</div>
+            `;
+        }
+        
+        messagesContainer.appendChild(msgDiv);
+        messagesContainer.scrollTop = messagesContainer.scrollHeight;
+    }
+
+    // --- API 调用 ---
+
+    async function handleApiRequest(url, options) {
+        try {
+            const response = await fetch(url, options);
+            const data = await response.json();
+            if (!data.success) {
+                throw new Error(data.message || data.error || '未知错误');
+            }
+            return data;
+        } catch (error) {
+            console.error('API请求失败:', error);
+            showApiStatus(`请求失败: ${error.message}`, true);
+            throw error;
+        }
+    }
+
+    // 注册
+    registerForm.addEventListener('submit', async (e) => {
+        e.preventDefault();
+        const username = document.getElementById('reg-username').value;
+        const password = document.getElementById('reg-password').value;
+
+        try {
+            const data = await handleApiRequest(`${API_BASE_URL}/api/v1/auth/register`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ username, password }),
+            });
+            showApiStatus('注册成功！请登录。');
+            registerForm.reset();
+        } catch (error) {}
+    });
+
+    // 登录
+    loginForm.addEventListener('submit', async (e) => {
+        e.preventDefault();
+        const username = document.getElementById('login-username').value;
+        const password = document.getElementById('login-password').value;
+
+        try {
+            const result = await handleApiRequest(`${API_BASE_URL}/api/v1/auth/login`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ username, password }),
+            });
+            authToken = result.data.token;
+            currentUserId = result.data.id;
+            currentUsername = result.data.username;
+            
+            showApiStatus('登录成功！');
+            updateUIAfterLogin();
+            fetchRooms();
+        } catch (error) {}
+    });
+
+    // 获取房间列表
+    async function fetchRooms() {
+        try {
+            // 获取已加入的房间
+            const joinedResult = await handleApiRequest(`${API_BASE_URL}/api/v1/rooms/joined`, {
+                headers: { 'Authorization': `Bearer ${authToken}` }
+            });
+            
+            // 获取所有房间
+            const allResult = await handleApiRequest(`${API_BASE_URL}/api/v1/rooms`, {
+                headers: { 'Authorization': `Bearer ${authToken}` }
+            });
+            
+            // 清空房间列表
+            joinedRoomListUl.innerHTML = '';
+            availableRoomListUl.innerHTML = '';
+            
+            // 创建已加入房间的ID集合以便过滤
+            const joinedRoomIds = new Set();
+            if (joinedResult.data.rooms && joinedResult.data.rooms.length > 0) {
+                joinedResult.data.rooms.forEach(room => {
+                    joinedRoomIds.add(room.id);
+                    const li = document.createElement('li');
+                    
+                    // 检查是否为房间创建者
+                    const isCreator = room.creator_id === currentUserId;
+                    
+                    li.innerHTML = `
+                        <span>${room.name} (${room.member_count}人)</span>
+                        <div>
+                            <button class="enter-room-btn" data-room-id="${room.id}">进入</button>
+                            <button class="leave-room-btn secondary" data-room-id="${room.id}" style="margin-left: 5px;">离开</button>
+                            ${isCreator ? `<button class="delete-room-btn" data-room-id="${room.id}" style="margin-left: 5px; background-color: var(--error-color);">删除</button>` : ''}
+                        </div>
+                    `;
+                    joinedRoomListUl.appendChild(li);
+                });
+            } else {
+                joinedRoomListUl.innerHTML = '<li>您还没有加入任何房间</li>';
+            }
+            
+            // 显示可加入的房间（未加入的房间）
+            if (allResult.data.rooms && allResult.data.rooms.length > 0) {
+                const availableRooms = allResult.data.rooms.filter(room => !joinedRoomIds.has(room.id));
+                if (availableRooms.length > 0) {
+                    availableRooms.forEach(room => {
+                        const li = document.createElement('li');
+                        li.innerHTML = `
+                            <span>${room.name} (${room.member_count}人)</span>
+                            <button class="join-room-btn" data-room-id="${room.id}">加入</button>
+                        `;
+                        availableRoomListUl.appendChild(li);
+                    });
+                } else {
+                    availableRoomListUl.innerHTML = '<li>暂无可加入的房间</li>';
+                }
+            } else {
+                availableRoomListUl.innerHTML = '<li>暂无房间，快去创建一个吧！</li>';
+            }
+        } catch (error) {
+            console.error('获取房间列表失败:', error);
+        }
+    }
+
+    // 创建房间
+    createRoomForm.addEventListener('submit', async (e) => {
+        e.preventDefault();
+        const name = document.getElementById('room-name').value;
+        const description = document.getElementById('room-desc').value;
+
+        try {
+            await handleApiRequest(`${API_BASE_URL}/api/v1/rooms`, {
+                method: 'POST',
+                headers: { 
+                    'Content-Type': 'application/json',
+                    'Authorization': `Bearer ${authToken}`
+                },
+                body: JSON.stringify({ name, description }),
+            });
+            showApiStatus('房间创建成功！');
+            createRoomForm.reset();
+            fetchRooms();
+        } catch (error) {}
+    });
+
+    // 加入房间（通过事件委托）
+    availableRoomListUl.addEventListener('click', async (e) => {
+        if (e.target.classList.contains('join-room-btn')) {
+            const roomId = e.target.dataset.roomId;
+            if (currentRoomId === roomId) {
+                showApiStatus('您已在该房间中。');
+                return;
+            }
+            
+            try {
+                // HTTP API 加入房间
+                await handleApiRequest(`${API_BASE_URL}/api/v1/rooms/join`, {
+                     method: 'POST',
+                     headers: { 
+                         'Content-Type': 'application/json',
+                         'Authorization': `Bearer ${authToken}`
+                     },
+                     body: JSON.stringify({ room_id: roomId }),
+                });
+
+                const roomName = e.target.previousElementSibling.textContent.split('(')[0].trim();
+                showApiStatus(`已加入房间: ${roomName}`);
+                fetchRooms(); // 更新房间列表
+            } catch (error) {}
+        }
+    });
+
+    // 进入房间和离开房间（通过事件委托）
+    joinedRoomListUl.addEventListener('click', async (e) => {
+        if (e.target.classList.contains('enter-room-btn')) {
+            const roomId = e.target.dataset.roomId;
+            if (currentRoomId === roomId) {
+                showApiStatus('您已在该房间中。');
+                return;
+            }
+            
+            // 如果已经在其他房间，先通过WebSocket离开
+            if (currentRoomId && ws && ws.readyState === WebSocket.OPEN) {
+                ws.send(JSON.stringify({
+                    type: 'leave_room'
+                }));
+            }
+
+            currentRoomId = roomId;
+            const roomName = e.target.closest('li').querySelector('span').textContent.split('(')[0].trim();
+            chatRoomName.querySelector('span').textContent = `当前房间: ${roomName}`;
+            leaveRoomBtn.style.display = 'inline-block';
+            messagesContainer.innerHTML = '';
+            
+            showApiStatus(`正在进入房间: ${roomName}`);
+            await fetchMessages(roomId);
+            connectWebSocket();
+        } else if (e.target.classList.contains('leave-room-btn')) {
+            const roomId = e.target.dataset.roomId;
+            
+            try {
+                // 通过HTTP API离开房间
+                await handleApiRequest(`${API_BASE_URL}/api/v1/rooms/leave`, {
+                     method: 'POST',
+                     headers: { 
+                         'Content-Type': 'application/json',
+                         'Authorization': `Bearer ${authToken}`
+                     },
+                     body: JSON.stringify({ room_id: roomId }),
+                });
+
+                const roomName = e.target.closest('li').querySelector('span').textContent.split('(')[0].trim();
+                showApiStatus(`已离开房间: ${roomName}`);
+                
+                // 如果离开的是当前房间，更新UI
+                if (currentRoomId === roomId) {
+                    chatSection.classList.add('hidden');
+                    chatPlaceholder.classList.remove('hidden');
+                    chatRoomName.querySelector('span').textContent = '请先加入一个房间';
+                    leaveRoomBtn.style.display = 'none';
+                    currentRoomId = null;
+                    messagesContainer.innerHTML = '';
+                    
+                    // 断开WebSocket连接
+                    if (ws && ws.readyState === WebSocket.OPEN) {
+                        ws.close();
+                    }
+                }
+                
+                fetchRooms(); // 更新房间列表
+            } catch (error) {}
+        } else if (e.target.classList.contains('delete-room-btn')) {
+            const roomId = e.target.dataset.roomId;
+            const roomName = e.target.closest('li').querySelector('span').textContent.split('(')[0].trim();
+            
+            // 确认删除
+            if (!confirm(`确定要删除房间 "${roomName}" 吗？此操作不可恢复！`)) {
+                return;
+            }
+            
+            try {
+                // 通过HTTP API删除房间
+                await handleApiRequest(`${API_BASE_URL}/api/v1/rooms/${roomId}`, {
+                     method: 'DELETE',
+                     headers: { 
+                         'Authorization': `Bearer ${authToken}`
+                     }
+                });
+
+                showApiStatus(`房间 "${roomName}" 已删除`);
+                
+                // 如果删除的是当前房间，更新UI
+                if (currentRoomId === roomId) {
+                    chatSection.classList.add('hidden');
+                    chatPlaceholder.classList.remove('hidden');
+                    chatRoomName.querySelector('span').textContent = '请先加入一个房间';
+                    leaveRoomBtn.style.display = 'none';
+                    currentRoomId = null;
+                    messagesContainer.innerHTML = '';
+                    
+                    // 断开WebSocket连接
+                    if (ws && ws.readyState === WebSocket.OPEN) {
+                        ws.close();
+                    }
+                }
+                
+                fetchRooms(); // 更新房间列表
+            } catch (error) {}
+        }
+    });
+
+    // 获取历史消息
+    async function fetchMessages(roomId) {
+        try {
+            const result = await handleApiRequest(`${API_BASE_URL}/api/v1/messages?room_id=${roomId}&limit=50`, {
+                headers: { 'Authorization': `Bearer ${authToken}` }
+            });
+            if (result.data.messages) {
+                result.data.messages.forEach(displayMessage);
+            }
+        } catch (error) {}
+    }
+
+
+    // --- WebSocket ---
+    function connectWebSocket() {
+        if (ws && ws.readyState === WebSocket.OPEN) {
+            ws.close();
+        }
+        
+        // 清除之前的心跳
+        if (heartbeatInterval) {
+            clearInterval(heartbeatInterval);
+            heartbeatInterval = null;
+        }
+        
+        ws = new WebSocket(WEBSOCKET_URL);
+
+        ws.onopen = () => {
+            console.log('WebSocket 连接已建立');
+            // 1. 发送认证
+            ws.send(JSON.stringify({
+                type: 'auth',
+                token: authToken
+            }));
+            
+            // 2. 开始心跳检测
+            heartbeatInterval = setInterval(() => {
+                if (ws && ws.readyState === WebSocket.OPEN) {
+                    ws.send(JSON.stringify({ type: 'ping' }));
+                }
+            }, 30000); // 每30秒发送一次心跳
+        };
+
+        ws.onmessage = (event) => {
+            const message = JSON.parse(event.data);
+            console.log('收到WebSocket消息:', message);
+
+            if (!message.success) {
+                showApiStatus(`WebSocket错误: ${message.error || message.message}`, true);
+                return;
+            }
+
+            // 处理不同类型的消息
+            if (message.data && message.data.type) {
+                switch(message.data.type) {
+                    case 'room_joined':
+                        showApiStatus(`WebSocket: 成功进入房间 ${message.data.room_id}`);
+                        chatSection.classList.remove('hidden');
+                        chatPlaceholder.classList.add('hidden');
+                        // 重新获取房间列表以更新人数
+                        fetchRooms();
+                        break;
+                    case 'message_received':
+                        displayMessage(message.data);
+                        break;
+                    case 'user_joined':
+                        displayMessage(message.data);
+                        const joinedUserName = message.data.username || message.data.user_id;
+                        showApiStatus(`用户 ${joinedUserName} 加入了房间`);
+                        // 更新房间列表以反映最新人数
+                        fetchRooms();
+                        break;
+                    case 'user_left':
+                        displayMessage(message.data);
+                        const leftUserName = message.data.username || message.data.user_id;
+                        showApiStatus(`用户 ${leftUserName} 离开了房间`);
+                        // 更新房间列表以反映最新人数
+                        fetchRooms();
+                        break;
+                    case 'room_left':
+                        showApiStatus(`已离开房间 ${message.data.room_id}`);
+                        chatSection.classList.add('hidden');
+                        chatPlaceholder.classList.remove('hidden');
+                        chatRoomName.querySelector('span').textContent = '请先加入一个房间';
+                        leaveRoomBtn.style.display = 'none';
+                        currentRoomId = null;
+                        messagesContainer.innerHTML = '';
+                        // 重新获取房间列表以更新人数
+                        fetchRooms();
+                        break;
+                    case 'pong':
+                        console.log('心跳响应');
+                        break;
+                }
+            } else if (message.message === 'WebSocket authentication successful') {
+                // 认证成功后，加入房间
+                showApiStatus('WebSocket认证成功');
+                if (currentRoomId) {
+                    ws.send(JSON.stringify({
+                        type: 'join_room',
+                        room_id: currentRoomId
+                    }));
+                }
+            }
+        };
+
+        ws.onclose = () => {
+            console.log('WebSocket 连接已断开');
+            // 清除心跳
+            if (heartbeatInterval) {
+                clearInterval(heartbeatInterval);
+                heartbeatInterval = null;
+            }
+            ws = null;
+        };
+
+        ws.onerror = (error) => {
+            console.error('WebSocket 错误:', error);
+            showApiStatus('WebSocket 连接发生错误', true);
+        };
+    }
+    
+    // 离开房间
+    leaveRoomBtn.addEventListener('click', async () => {
+        if (currentRoomId) {
+            try {
+                // 通过HTTP API离开房间
+                await handleApiRequest(`${API_BASE_URL}/api/v1/rooms/leave`, {
+                     method: 'POST',
+                     headers: { 
+                         'Content-Type': 'application/json',
+                         'Authorization': `Bearer ${authToken}`
+                     },
+                     body: JSON.stringify({ room_id: currentRoomId }),
+                });
+
+                showApiStatus(`已离开房间 ${currentRoomId}`);
+                
+                // 更新UI
+                chatSection.classList.add('hidden');
+                chatPlaceholder.classList.remove('hidden');
+                chatRoomName.querySelector('span').textContent = '请先加入一个房间';
+                leaveRoomBtn.style.display = 'none';
+                currentRoomId = null;
+                messagesContainer.innerHTML = '';
+                
+                // 断开WebSocket连接
+                if (ws && ws.readyState === WebSocket.OPEN) {
+                    ws.close();
+                }
+                
+                fetchRooms(); // 更新房间列表
+            } catch (error) {}
+        }
+    });
+
+    // 发送消息
+    sendMessageForm.addEventListener('submit', (e) => {
+        e.preventDefault();
+        const content = messageInput.value;
+        if (content && ws && ws.readyState === WebSocket.OPEN) {
+            ws.send(JSON.stringify({
+                type: 'send_message',
+                content: content
+            }));
+            messageInput.value = '';
+        } else {
+            showApiStatus('无法发送消息：未连接或未加入房间', true);
+        }
+    });
+
+
+    // --- UI 更新 ---
+    function updateUIAfterLogin() {
+        authSection.classList.add('hidden');
+        roomMgmtSection.classList.remove('hidden');
+        userInfoDiv.textContent = `已登录: ${currentUsername}`;
+    }
+});
+</script>
 </body>
 </html>

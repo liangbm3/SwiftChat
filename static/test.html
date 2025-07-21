@@ -1,0 +1,85 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>布局测试</title>
+    <style>
+        body { margin: 0; padding: 20px; font-family: Arial, sans-serif; }
+        .container { 
+            width: 800px; 
+            height: 600px; 
+            border: 2px solid #ccc; 
+            display: flex;
+            background: white;
+        }
+        .sidebar { 
+            width: 30%; 
+            background: #f5f5f5; 
+            border-right: 1px solid #ccc;
+            padding: 10px;
+        }
+        .chat-area { 
+            width: 70%; 
+            display: flex; 
+            flex-direction: column; 
+            height: 100%;
+        }
+        .chat-header { 
+            padding: 15px; 
+            background: #007bff; 
+            color: white; 
+            flex-shrink: 0;
+        }
+        .messages { 
+            flex-grow: 1; 
+            padding: 10px; 
+            overflow-y: auto; 
+            background: #fdfdfd;
+            border: 1px solid #eee;
+        }
+        .chat-input { 
+            padding: 15px; 
+            background: white; 
+            border-top: 1px solid #ccc; 
+            flex-shrink: 0;
+        }
+        .message { 
+            margin-bottom: 10px; 
+            padding: 8px; 
+            background: #e9ecef; 
+            border-radius: 4px;
+        }
+    </style>
+</head>
+<body>
+    <h1>聊天布局测试</h1>
+    <div class="container">
+        <div class="sidebar">
+            <h3>侧边栏</h3>
+            <p>房间列表等内容</p>
+        </div>
+        <div class="chat-area">
+            <div class="chat-header">聊天房间头部</div>
+            <div class="messages" id="messages">
+                <!-- 这里会动态添加很多消息 -->
+            </div>
+            <div class="chat-input">
+                <input type="text" placeholder="输入消息..." style="flex: 1; margin-right: 10px;">
+                <button>发送</button>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        // 添加很多测试消息
+        const messagesContainer = document.getElementById('messages');
+        for (let i = 1; i <= 50; i++) {
+            const msgDiv = document.createElement('div');
+            msgDiv.className = 'message';
+            msgDiv.textContent = `这是第 ${i} 条测试消息，用来测试当消息很多时布局是否正确。`;
+            messagesContainer.appendChild(msgDiv);
+        }
+    </script>
+</body>
+</html>
