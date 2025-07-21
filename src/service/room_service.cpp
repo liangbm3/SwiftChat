@@ -32,6 +32,14 @@ void RoomService::registerRoutes(http::HttpServer &server)
         .use_auth_middleware = false
     });
 
+    // 注册获取用户已加入房间的路由
+    server.addHandler({
+        .path = "/api/v1/rooms/joined",
+        .method = "GET",
+        .handler = [this](const http::HttpRequest &request) { return handleGetUserJoinedRooms(request); },
+        .use_auth_middleware = true
+    });
+
     // 注册加入房间的路由
     server.addHandler({
         .path = "/api/v1/rooms/join",
@@ -394,6 +402,64 @@ http::HttpResponse RoomService::handleGetRooms(const http::HttpRequest &request)
         json error_response = {
             {"success", false},
             {"message", "Failed to get rooms"},
+            {"error", e.what()}
+        };
+        
+        return http::HttpResponse::InternalError().withJsonBody(error_response);
+    }
+}
+
+http::HttpResponse RoomService::handleGetUserJoinedRooms(const http::HttpRequest &request)
+{
+    try
+    {
+        // 获取当前用户的ID
+        auto user_id_opt = getUserIdFromRequest(request);
+        if (!user_id_opt)
+        {
+            LOG_ERROR << "Failed to get user ID from request.";
+            json error_response = {
+                {"success", false},
+                {"message", "Authentication required"},
+                {"error", "Invalid or missing authentication token"}
+            };
+            return http::HttpResponse::Unauthorized().withJsonBody(error_response);
+        }
+
+        // 获取用户已加入的房间
+        auto joined_rooms = db_manager_.getUserJoinedRooms(user_id_opt.value());
+        
+        // 将Room对象转换为JSON数组
+        json rooms_json = json::array();
+        for (const auto& room : joined_rooms) {
+            json room_json = room.toJson();
+            
+            // 获取房间成员数量（已经在getUserJoinedRooms中计算了，但为了保持一致性再次获取）
+            auto members = db_manager_.getRoomMembers(room.getId());
+            room_json["member_count"] = members.size();
+            
+            rooms_json.push_back(room_json);
+        }
+        
+        // 构造标准的JSON响应格式
+        json json_response = {
+            {"success", true},
+            {"message", "User joined rooms retrieved successfully"},
+            {"data", {
+                {"rooms", rooms_json},
+                {"count", joined_rooms.size()}
+            }}
+        };
+        
+        return http::HttpResponse::Ok().withJsonBody(json_response);
+    }
+    catch(const std::exception& e)
+    {
+        LOG_ERROR << "Failed to get user joined rooms: " << e.what();
+        
+        json error_response = {
+            {"success", false},
+            {"message", "Failed to get user joined rooms"},
             {"error", e.what()}
         };
         

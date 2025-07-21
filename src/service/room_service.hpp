@@ -23,6 +23,7 @@ private:
     // 房间管理
     http::HttpResponse handleCreateRoom(const http::HttpRequest &request);//创建房间，需要验证
     http::HttpResponse handleGetRooms(const http::HttpRequest &request);//获取房间列表，不需要验证
+    http::HttpResponse handleGetUserJoinedRooms(const http::HttpRequest &request);//获取用户已加入的房间，需要验证
     http::HttpResponse handleDeleteRoom(const http::HttpRequest &request);//删除房间，需要验证创建者身份
     http::HttpResponse handleUpdateRoomDescription(const http::HttpRequest &request);//更改房间描述，需要验证创建者身份
     
