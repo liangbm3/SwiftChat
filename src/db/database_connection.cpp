@@ -12,6 +12,16 @@ DatabaseConnection::DatabaseConnection(const std::string &db_path) : db_path_(db
             return;
         }
         LOG_INFO << "Opened database successfully";
+        
+        // 启用外键约束
+        if (!enableForeignKeys())
+        {
+            LOG_ERROR << "Failed to enable foreign key constraints";
+            sqlite3_close(db_);
+            db_ = nullptr;
+            return;
+        }
+        LOG_INFO << "Foreign key constraints enabled";
     }
     
     //如果连接成功则初始化表
@@ -52,6 +62,12 @@ bool DatabaseConnection::executeQuery(const std::string &query)
     return true;
 }
 
+bool DatabaseConnection::enableForeignKeys()
+{
+    const char* enable_fk_query = "PRAGMA foreign_keys = ON;";
+    return executeQuery(enable_fk_query);
+}
+
 bool DatabaseConnection::initializeTables()
 {
     return createUsersTable() &&
@@ -82,7 +98,7 @@ bool DatabaseConnection::createRoomsTable()
         "description TEXT DEFAULT '',"
         "creator_id TEXT NOT NULL,"
         "created_at INTEGER NOT NULL,"
-        "FOREIGN KEY(creator_id) REFERENCES users(id));";
+        "FOREIGN KEY(creator_id) REFERENCES users(id) ON DELETE CASCADE);";
     
     return executeQuery(create_rooms_table);
 }
@@ -95,8 +111,8 @@ bool DatabaseConnection::createRoomMembersTable()
         "user_id TEXT NOT NULL,"
         "joined_at INTEGER NOT NULL,"
         "PRIMARY KEY(room_id, user_id),"
-        "FOREIGN KEY(room_id) REFERENCES rooms(id),"
-        "FOREIGN KEY(user_id) REFERENCES users(id));";
+        "FOREIGN KEY(room_id) REFERENCES rooms(id) ON DELETE CASCADE,"
+        "FOREIGN KEY(user_id) REFERENCES users(id) ON DELETE CASCADE);";
     
     return executeQuery(create_room_members_table);
 }
@@ -110,8 +126,8 @@ bool DatabaseConnection::createMessagesTable()
         "user_id TEXT NOT NULL,"
         "content TEXT NOT NULL,"
         "timestamp INTEGER NOT NULL,"
-        "FOREIGN KEY(room_id) REFERENCES rooms(id),"
-        "FOREIGN KEY(user_id) REFERENCES users(id));";
+        "FOREIGN KEY(room_id) REFERENCES rooms(id) ON DELETE CASCADE,"
+        "FOREIGN KEY(user_id) REFERENCES users(id) ON DELETE CASCADE);";
     
     return executeQuery(create_messages_table);
 }

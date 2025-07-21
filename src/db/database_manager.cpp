@@ -108,6 +108,11 @@ std::vector<nlohmann::json> DatabaseManager::getRoomMembers(const std::string &r
     return room_repo_ ? room_repo_->getRoomMembers(room_id) : std::vector<nlohmann::json>();
 }
 
+std::vector<Room> DatabaseManager::getUserJoinedRooms(const std::string &user_id) const
+{
+    return room_repo_ ? room_repo_->getUserJoinedRooms(user_id) : std::vector<Room>();
+}
+
 bool DatabaseManager::addRoomMember(const std::string &room_id, const std::string &user_id)
 {
     return room_repo_ ? room_repo_->addRoomMember(room_id, user_id) : false;

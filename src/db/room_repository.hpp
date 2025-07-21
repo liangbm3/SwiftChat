@@ -28,6 +28,7 @@ public:
     
     // 房间成员管理
     std::vector<nlohmann::json> getRoomMembers(const std::string &room_id) const;// 获取房间成员
+    std::vector<Room> getUserJoinedRooms(const std::string &user_id) const;// 获取用户已加入的房间列表
     bool addRoomMember(const std::string &room_id, const std::string &user_id);// 根据ID添加房间成员
     bool removeRoomMember(const std::string &room_id, const std::string &user_id);// 根据ID移除房间成员
     

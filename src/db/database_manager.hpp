@@ -43,6 +43,7 @@ public:
 
     // 房间成员操作代理
     std::vector<nlohmann::json> getRoomMembers(const std::string &room_id) const;
+    std::vector<Room> getUserJoinedRooms(const std::string &user_id) const;
     bool addRoomMember(const std::string &room_id, const std::string &user_id);
     bool removeRoomMember(const std::string &room_id, const std::string &user_id);
 

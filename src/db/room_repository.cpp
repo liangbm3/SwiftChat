@@ -299,6 +299,42 @@ bool RoomRepository::addRoomMember(const std::string &room_id, const std::string
     return success;
 }
 
+std::vector<Room> RoomRepository::getUserJoinedRooms(const std::string &user_id) const
+{
+    std::vector<Room> joined_rooms;
+    if (!db_conn_->isConnected()) return joined_rooms;
+    
+    std::lock_guard<std::recursive_mutex> lock(db_conn_->getMutex());
+    const char *sql = "SELECT r.id, r.name, r.description, r.creator_id, r.created_at "
+                      "FROM rooms r "
+                      "JOIN room_members rm ON r.id = rm.room_id "
+                      "WHERE rm.user_id = ?;";
+    
+    sqlite3_stmt *stmt;
+    if (sqlite3_prepare_v2(db_conn_->getDb(), sql, -1, &stmt, nullptr) != SQLITE_OK)
+    {
+        LOG_ERROR << "Failed to prepare statement: " << sqlite3_errmsg(db_conn_->getDb());
+        return joined_rooms;
+    }
+
+    sqlite3_bind_text(stmt, 1, user_id.c_str(), -1, SQLITE_STATIC);
+
+    while (sqlite3_step(stmt) == SQLITE_ROW)
+    {
+        Room room;
+        room.setId(reinterpret_cast<const char*>(sqlite3_column_text(stmt, 0)));
+        room.setName(reinterpret_cast<const char*>(sqlite3_column_text(stmt, 1)));
+        room.setDescription(reinterpret_cast<const char*>(sqlite3_column_text(stmt, 2)));
+        room.setCreatorId(reinterpret_cast<const char*>(sqlite3_column_text(stmt, 3)));
+        room.setCreatedAt(sqlite3_column_int64(stmt, 4));
+        
+        joined_rooms.push_back(room);
+    }
+
+    sqlite3_finalize(stmt);
+    return joined_rooms;
+}
+
 bool RoomRepository::removeRoomMember(const std::string &room_id, const std::string &user_id)
 {
     if (!db_conn_->isConnected()) return false;

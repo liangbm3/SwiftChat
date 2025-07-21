@@ -21,6 +21,7 @@ public:
 protected:
     bool executeQuery(const std::string &query);
     bool initializeTables();
+    bool enableForeignKeys();
 
     sqlite3 *db_;                // 指向sqlite3 结构体的指针
     std::string db_path_;        // 数据库路径
