@@ -36,16 +36,12 @@ include_directories(
     ${OPENSSL_INCLUDE_DIR}         # OpenSSL头文件目录
 )
 
-# 设置安装路径为构建目录
-set(CMAKE_INSTALL_PREFIX "${CMAKE_BINARY_DIR}")
+# 设置安装路径为bin目录
+set(CMAKE_INSTALL_PREFIX "${CMAKE_BINARY_DIR}/bin")
 
 # 添加src子目录到构建系统
 add_subdirectory(src)
 
 # 添加测试目录到构建系统
 add_subdirectory(tests)
-
-# 添加例子目录到构建系统 (暂时注释掉，因为缺少websocket相关文件)
-# add_subdirectory(examples)
-
 
