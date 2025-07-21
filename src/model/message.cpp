@@ -8,12 +8,7 @@ json Message::toJson() const
     j["user_id"] = user_id_;
     j["content"] = content_;
     j["timestamp"] = timestamp_;
-    
-    // 如果有发送者信息，则包含发送者信息
-    if (hasSenderInfo())
-    {
-        j["sender"] = sender_.toJson();
-    }
+    j["user_name"] = user_name_;
     
     return j;
 }
@@ -37,11 +32,8 @@ Message Message::fromJson(const json &j)
     if (j.contains("timestamp") && j["timestamp"].is_number_integer())
         message.timestamp_ = j["timestamp"];
     
-    // 如果包含发送者信息，则解析发送者信息
-    if (j.contains("sender") && j["sender"].is_object())
-    {
-        message.sender_ = User::fromJson(j["sender"]);
-    }
+    if (j.contains("user_name") && j["user_name"].is_string())
+        message.user_name_ = j["user_name"];
     
     return message;
 }
