@@ -1,28 +1,20 @@
+# 数据层设计文档
 
+## 1\. 概述
 
-# 数据库设计文档
+数据层的实现位于`src/db/`目录下，数据层的作用是为上层提供操作数据库的接口，对数据进行持久化存储。数据层使用 SQLite 3 数据库，并且采用仓库模式和依赖注入等设计模式，架构清晰，易于拓展。
 
-设计模式：仓库模式和依赖注入、外观模式
+所有数据库操作都通过 `std::recursive_mutex` 加锁，确保在多线程环境下的数据一致性和安全性。并且所有数据插入和查询都使用了 `sqlite3_prepare_v2` 和 `sqlite3_bind_*` 系列函数，有效防止了 SQL 注入攻击。为频繁查询的字段（如 `username` 和 `room_name`）建立了索引，以提高查询性能。数据表设置了级联删除，有效防止孤儿数据的出现：
+- rooms 表
+    - 当用户被删除时，该用户创建的所有房间也会被自动删除
+- room_members 表
+    - 当房间被删除时，该房间的所有成员关系记录会被自动删除
+    - 当用户被删除时，该用户在所有房间的成员关系记录会被自动删除
+- messages 表
+    - 当房间被删除时，该房间的所有消息会被自动删除
+    - 当用户被删除时，该用户发送的所有消息会被自动删除
 
-本文档详细描述了聊天应用项目所使用的 SQLite 数据库的结构、设计原则和核心功能。该数据库由 `DatabaseManager` 类进行封装和管理。
-
-## 1\. 概述 (Overview)
-
-本数据库旨在为一款多用户、多聊天室的实时聊天应用提供持久化存储。它负责管理用户信息、聊天室信息、成员关系以及聊天消息。
-
-  * **数据库系统**: SQLite 3
-  * **核心实体**:
-    1.  **用户 (Users)**: 应用的注册用户。
-    2.  **聊天室 (Rooms)**: 用户可以加入并聊天的群组。
-    3.  **聊天室成员 (Room Members)**: 记录用户和聊天室之间多对多关系的中间表。
-    4.  **消息 (Messages)**: 用户在聊天室中发送的消息。
-  * **设计亮点**:
-      * **ID 作为主键**: 所有核心实体（用户、聊天室）都使用一个唯一的、随机生成的字符串ID (`id`) 作为主键，而不是使用可变的用户名或房间名。这大大增强了系统的健壮性，即使用户或房间改名，也不会破坏表之间的关联关系。
-      * **线程安全**: 所有数据库操作都通过 `std::recursive_mutex` 加锁，确保在多线程环境下的数据一致性和安全性。
-      * **防SQL注入**: 所有数据插入和查询都使用了 `sqlite3_prepare_v2` 和 `sqlite3_bind_*` 系列函数，有效防止了 SQL 注入攻击。
-      * **索引优化**: 为频繁查询的字段（如 `username` 和 `room_name`）建立了索引，以提高查询性能。
-
-## 2\. 数据库表结构 (Schema)
+## 2\. 数据库表结构
 
 数据库包含以下四个核心表：
 
@@ -36,8 +28,7 @@
 | `username` | `TEXT` | `UNIQUE NOT NULL` | 用户的显示名称，必须唯一。 |
 | `password_hash` | `TEXT` | `NOT NULL` | 存储用户密码的哈希值。 |
 | `created_at` | `INTEGER` | `NOT NULL` | 账户创建时间的 Unix 时间戳 (nanoseconds)。 |
-| `is_online` | `INTEGER` | `DEFAULT 0` | 标记用户是否在线 (0: 离线, 1: 在线)。 |
-| `last_active_time` | `INTEGER` | `DEFAULT 0` | 用户最后一次活跃的 Unix 时间戳 (nanoseconds)。 |
+
 
 ### 2.2. `rooms` 表
 
@@ -75,81 +66,268 @@
 | `content` | `TEXT` | `NOT NULL` | 消息的文本内容。 |
 | `timestamp` | `INTEGER` | `NOT NULL` | 消息发送的 Unix 时间戳 (nanoseconds)。 |
 
-## 3\. 索引 (Indexes)
 
-为了加速常用查询，定义了以下索引：
+## 3\. 数据库 API
 
-  * `CREATE INDEX IF NOT EXISTS idx_users_username ON users(username);`
-      * **目的**: 快速通过用户名查找用户，例如在登录 (`validateUser`) 或检查用户是否存在 (`userExists`) 时。
-  * `CREATE INDEX IF NOT EXISTS idx_rooms_name ON rooms(name);`
-      * **目的**: 快速通过房间名查找聊天室，例如在获取房间列表或检查房间是否存在时。
+`DatabaseManager` 是数据库访问层的核心入口，它遵循**外观模式 (Facade Pattern)**，为上层业务逻辑提供了一个统一、简洁且线程安全的接口来与数据库进行交互。
 
-## 4\. 实体关系图 (ERD - Conceptual)
+所有数据库操作都应通过实例化该类来完成。它内部管理着数据库连接以及各个数据实体的仓库（Repository），调用者无需关心底层实现细节。
 
-```mermaid
-erDiagram
-    users {
-        TEXT id PK
-        TEXT username UK
-        TEXT password_hash
-        INTEGER created_at
-        INTEGER is_online
-        INTEGER last_active_time
-    }
-    rooms {
-        TEXT id PK
-        TEXT name UK
-        TEXT description
-        TEXT creator_id FK
-        INTEGER created_at
-    }
-    room_members {
-        TEXT room_id PK, FK
-        TEXT user_id PK, FK
-        INTEGER joined_at
-    }
-    messages {
-        INTEGER id PK
-        TEXT room_id FK
-        TEXT user_id FK
-        TEXT content
-        INTEGER timestamp
-    }
+**核心约定:**
+-  **ID 优先**: 所有核心操作（如修改、删除、添加关联）都应使用实体的唯一ID (`user_id`, `room_id`)。
+-  **`std::optional` 返回值**: 所有查找单个实体的方法（如 `getUserById`）均返回 `std::optional<T>`。调用者必须先检查其是否有值 (`.has_value()`)，再获取其中的数据 (`.value()` 或 `*`)，这是一种更安全的API设计。
 
-    users ||--o{ rooms : "creates"
-    users }o--o{ room_members : "is member of"
-    rooms }o--o{ room_members : "has member"
-    users ||--o{ messages : "sends"
-    rooms ||--o{ messages : "contains"
-```
+### 3.1 核心方法
 
-## 5\. 潜在的改进与建议
+---
 
-您的数据库设计已经非常扎实，但仍有一些可以考虑的扩展方向：
+#### `DatabaseManager(const std::string &db_path)`
 
-1.  **级联删除 (Cascading Deletes)**:
+- **描述**: 构造函数。创建一个 `DatabaseManager` 实例，并初始化数据库连接、创建所有必要的数据表和仓库。
+- **参数**:
+    - `db_path` (`const std::string&`): SQLite 数据库文件的路径。
+- **返回值**: 无。
 
-      * **问题**: 当前设计下，如果一个用户或聊天室被删除，相关的记录（如成员关系、消息）会成为“孤儿数据”。
-      * **建议**: 在定义外键时，可以添加 `ON DELETE CASCADE` 规则。例如，当一个 `room` 被删除时，自动删除 `room_members` 和 `messages` 中所有与该 `room_id` 相关的记录。
-        ```sql
-        -- 示例
-        CREATE TABLE messages (
-            -- ... 其他字段
-            FOREIGN KEY(room_id) REFERENCES rooms(id) ON DELETE CASCADE,
-            FOREIGN KEY(user_id) REFERENCES users(id) ON DELETE CASCADE
-        );
-        ```
+---
 
-2.  **软删除 (Soft Deletes)**:
+#### `bool isConnected() const`
 
-      * **问题**: 直接使用 `DELETE` 语句会永久删除数据，不利于数据恢复或审计。
-      * **建议**: 可以在 `users` 和 `rooms` 表中增加一个 `is_deleted` (或 `deleted_at`) 字段。删除操作变为 `UPDATE` 操作，将该标志位置位。所有查询都需要增加 `WHERE is_deleted = 0` 的条件。
+- **描述**: 检查数据库是否已成功连接并初始化。
+- **参数**: 无。
+- **返回值**:
+    - `true`: 连接成功。
+    - `false`: 连接失败。
 
-3.  **消息功能扩展**:
+---
 
-      * 可以为 `messages` 表增加 `message_type` 字段（如 `text`, `image`, `file`, `system_notification`）来支持多媒体消息。
-      * 可以增加一个 `message_read_status` 表来跟踪消息已读回执。
+### 3.2 用户操作
 
------
+---
 
-总的来说，这是一个非常专业和可靠的数据库设计，为您的C++聊天项目奠定了坚实的基础。如果您有关于代码实现、项目扩展或其他任何相关问题，随时都可以提出来！
+#### `bool createUser(const std::string &username, const std::string &password_hash)`
+
+-  **描述**: 创建一个新用户。用户名具有唯一性约束。
+- **参数**:
+    - `username` (`const std::string&`): 用户的显示名称（必须唯一）。
+    - `password_hash` (`const std::string&`): 经过哈希处理的密码。
+- **返回值**: `bool` - `true` 表示创建成功，`false` 表示失败（如用户名已存在）。
+
+---
+
+#### `bool validateUser(const std::string &username, const std::string &password_hash)`
+
+- **描述**: 验证用户名和密码哈希是否匹配。
+- **参数**:
+    - `username` (`const std::string&`): 用户名。
+    - `password_hash` (`const std::string&`): 密码哈希。
+- **返回值**: `bool` - `true` 表示验证通过，`false` 表示失败。
+
+---
+
+#### `bool userExists(const std::string &user_id)`
+
+- **描述**: 根据用户ID检查用户是否存在。
+- **参数**:
+    - `user_id` (`const std::string&`): 用户的唯一ID。
+- **返回值**: `bool` - `true` 表示存在，`false` 表示不存在。
+
+---
+
+#### `std::optional<User> getUserById(const std::string &user_id) const`
+
+- **描述**: 根据用户ID查找并返回一个完整的`User`对象。
+- **参数**:
+      - `user_id` (`const std::string&`): 用户的唯一ID。
+- **返回值**: `std::optional<User>` - 如果找到，返回包含`User`对象的`optional`；否则返回`std::nullopt`。
+
+---
+
+#### `std::optional<User> getUserByUsername(const std::string &username) const`
+
+- **描述**: 根据用户名查找并返回一个完整的`User`对象。这是将用户输入（用户名）转换成系统内部ID的关键方法。
+- **参数**:
+      - `username` (`const std::string&`): 用户名。
+- **返回值**: `std::optional<User>` - 如果找到，返回包含`User`对象的`optional`；否则返回`std::nullopt`。
+
+---
+
+#### `std::vector<User> getAllUsers()`
+
+- **描述**: 获取所有用户的详细信息。
+- **参数**: 无。
+- **返回值**: `std::vector<User>` - 包含所有用户完整信息的向量。
+
+---
+
+### 3.3 房间操作
+
+#### 房间基本操作
+
+---
+
+#### `std::optional<Room> createRoom(const std::string &name, const std::string &description, const std::string &creator_id)`
+
+- **描述**: 创建一个新的聊天室。房间名具有唯一性约束。
+- **参数**:
+      - `name` (`const std::string&`): 聊天室的显示名称（必须唯一）。
+      - `description` (`const std::string&`): 聊天室的描述信息。
+      - `creator_id` (`const std::string&`): 创建者的用户ID。
+- **返回值**: `std::optional<Room>` - 如果创建成功，返回包含新房间完整信息的`Room`对象；如果失败（如房间名已存在），则返回`std::nullopt`。
+
+---
+
+#### `bool deleteRoom(const std::string &room_id)`
+
+- **描述**: 根据房间ID删除一个聊天室。级联删除该房间的所有消息和成员关系。
+- **参数**:
+      - `room_id` (`const std::string&`): 房间的唯一ID。
+- **返回值**: `bool` - `true` 表示删除成功，`false` 表示失败。
+
+---
+
+#### `bool roomExists(const std::string &room_id)`
+
+- **描述**: 根据房间ID检查房间是否存在。
+- **参数**:
+      - `room_id` (`const std::string&`): 房间的唯一ID。
+- **返回值**: `bool` - `true` 表示存在，`false` 表示不存在。
+
+---
+
+#### `bool updateRoom(const std::string &room_id, const std::string &name, const std::string &description)`
+
+- **描述**: 更新房间的名称和描述信息。
+- **参数**:
+      - `room_id` (`const std::string&`): 房间的唯一ID。
+      - `name` (`const std::string&`): 新的房间名称。
+      - `description` (`const std::string&`): 新的房间描述。
+- **返回值**: `bool` - `true` 表示更新成功，`false` 表示失败。
+
+---
+
+#### 房间查询
+
+#### `std::vector<std::string> getRooms()`
+
+- **描述**: 获取所有房间的名称列表。
+- **参数**: 无。
+- **返回值**: `std::vector<std::string>` - 包含所有房间名称的向量。
+
+---
+
+#### `std::vector<Room> getAllRooms()`
+
+- **描述**: 获取所有房间的详细信息。
+- **参数**: 无。
+- **返回值**: `std::vector<Room>` - 包含所有房间完整信息的向量。
+
+---
+
+#### `std::optional<Room> getRoomById(const std::string &room_id) const`
+
+- **描述**: 根据房间ID查找并返回一个完整的`Room`对象。
+- **参数**:
+      - `room_id` (`const std::string&`): 房间的唯一ID。
+- **返回值**: `std::optional<Room>` - 如果找到，返回包含`Room`对象的`optional`；否则返回`std::nullopt`。
+
+---
+
+#### `std::optional<std::string> getRoomIdByName(const std::string &room_name) const`
+
+- **描述**: 根据房间名查找并返回房间ID。这是将用户输入（房间名）转换成系统内部ID的关键方法。
+- **参数**:
+      - `room_name` (`const std::string&`): 房间名称。
+- **返回值**: `std::optional<std::string>` - 如果找到，返回包含房间ID的`optional`；否则返回`std::nullopt`。
+
+---
+
+#### `bool isRoomCreator(const std::string &room_id, const std::string &user_id)`
+
+- **描述**: 检查指定用户是否为指定房间的创建者。
+- **参数**:
+      - `room_id` (`const std::string&`): 房间的唯一ID。
+      - `user_id` (`const std::string&`): 用户的唯一ID。
+- **返回值**: `bool` - `true` 表示是创建者，`false` 表示不是。
+
+---
+
+#### `std::string generateRoomId()`
+
+- **描述**: 生成一个唯一的房间ID。
+- **参数**: 无。
+- **返回值**: `std::string` - 新生成的房间ID。
+
+---
+
+#### 房间成员管理
+
+#### `std::vector<nlohmann::json> getRoomMembers(const std::string &room_id) const`
+
+- **描述**: 获取指定房间的所有成员信息。
+- **参数**:
+      - `room_id` (`const std::string&`): 房间的唯一ID。
+- **返回值**: `std::vector<nlohmann::json>` - 包含房间所有成员信息的JSON对象向量。
+
+---
+
+#### `std::vector<Room> getUserJoinedRooms(const std::string &user_id) const`
+
+- **描述**: 获取指定用户已加入的所有房间列表。
+- **参数**:
+      - `user_id` (`const std::string&`): 用户的唯一ID。
+- **返回值**: `std::vector<Room>` - 包含用户已加入房间信息的向量。
+
+---
+
+#### `bool addRoomMember(const std::string &room_id, const std::string &user_id)`
+
+- **描述**: 将指定用户添加到指定房间。
+- **参数**:
+      - `room_id` (`const std::string&`): 房间的唯一ID。
+      - `user_id` (`const std::string&`): 用户的唯一ID。
+- **返回值**: `bool` - `true` 表示添加成功，`false` 表示失败（如用户已在房间中）。
+
+---
+
+#### `bool removeRoomMember(const std::string &room_id, const std::string &user_id)`
+
+- **描述**: 从指定房间移除指定用户。
+- **参数**:
+      - `room_id` (`const std::string&`): 房间的唯一ID。
+      - `user_id` (`const std::string&`): 用户的唯一ID。
+- **返回值**: `bool` - `true` 表示移除成功，`false` 表示失败。
+
+### 3.4 消息操作
+
+---
+
+#### `bool saveMessage(const std::string &room_id, const std::string &user_id, const std::string &content, int64_t timestamp)`
+
+- **描述**: 保存一条新消息到指定房间。
+- **参数**:
+      - `room_id` (`const std::string&`): 消息所属房间的ID。
+      - `user_id` (`const std::string&`): 消息发送者的用户ID。
+      - `content` (`const std::string&`): 消息内容。
+      - `timestamp` (`int64_t`): 消息发送的时间戳（纳秒）。
+- **返回值**: `bool` - `true` 表示保存成功，`false` 表示失败。
+
+---
+
+#### `std::vector<Message> getMessages(const std::string &room_id, int limit = 50, int64_t before_timestamp = 0)`
+
+- **描述**: 获取指定房间的消息列表，支持分页和时间过滤。
+- **参数**:
+      - `room_id` (`const std::string&`): 房间的唯一ID。
+      - `limit` (`int`): 返回消息的最大数量，默认50条。
+      - `before_timestamp` (`int64_t`): 获取此时间戳之前的消息，0表示获取最新消息。
+- **返回值**: `std::vector<Message>` - 包含消息信息的向量，按时间戳倒序排列。
+
+---
+
+#### `std::optional<Message> getMessageById(int64_t message_id)`
+
+- **描述**: 根据消息ID获取单条消息的详细信息。
+- **参数**:
+      - `message_id` (`int64_t`): 消息的唯一ID。
+- **返回值**: `std::optional<Message>` - 如果找到，返回包含`Message`对象的`optional`；否则返回`std::nullopt`。
+
