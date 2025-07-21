@@ -16,42 +16,174 @@
 #include <ctime>
 #include <cstdlib>
 #include <memory>
+#include <getopt.h>
+#include <fstream>
+#include <filesystem>
 
 
 std::atomic<bool> running(true);
 std::unique_ptr<WebSocketServer> ws_server;
 
+// 配置选项结构
+struct ServerConfig {
+    int http_port = 8080;
+    int ws_port = 8081;
+    std::string db_path = "./chat.db";
+    std::string static_dir = "./static";
+    std::string log_file = "./logs/swiftchat.log";
+    bool show_help = false;
+    bool show_version = false;
+};
+
+void showHelp(const char* program_name) {
+    std::cout << "SwiftChat Server v1.0.0\n\n";
+    std::cout << "用法: " << program_name << " [选项]\n\n";
+    std::cout << "选项:\n";
+    std::cout << "  --http-port PORT     HTTP 服务器端口 (默认: 8080)\n";
+    std::cout << "  --ws-port PORT       WebSocket 服务器端口 (默认: 8081)\n";
+    std::cout << "  --db-path PATH       数据库文件路径 (默认: ./chat.db)\n";
+    std::cout << "  --static-dir DIR     静态文件目录 (默认: ./static)\n";
+    std::cout << "  --log-file FILE      日志文件路径 (默认: ./logs/swiftchat.log)\n";
+    std::cout << "  --help               显示帮助信息\n";
+    std::cout << "  --version            显示版本信息\n\n";
+    std::cout << "示例:\n";
+    std::cout << "  " << program_name << " --http-port 9000 --ws-port 9001\n";
+    std::cout << "  " << program_name << " --db-path /var/lib/swiftchat/chat.db\n";
+}
+
+void showVersion() {
+    std::cout << "SwiftChat Server v1.0.0\n";
+    std::cout << "基于 C++17 构建的高性能实时聊天服务器\n";
+}
+
+ServerConfig parseCommandLine(int argc, char* argv[]) {
+    ServerConfig config;
+    
+    static struct option long_options[] = {
+        {"http-port", required_argument, 0, 'h'},
+        {"ws-port", required_argument, 0, 'w'},
+        {"db-path", required_argument, 0, 'd'},
+        {"static-dir", required_argument, 0, 's'},
+        {"log-file", required_argument, 0, 'l'},
+        {"help", no_argument, 0, '?'},
+        {"version", no_argument, 0, 'v'},
+        {0, 0, 0, 0}
+    };
+    
+    int c;
+    while ((c = getopt_long(argc, argv, "h:w:d:s:l:?v", long_options, nullptr)) != -1) {
+        switch (c) {
+            case 'h':
+                config.http_port = std::atoi(optarg);
+                break;
+            case 'w':
+                config.ws_port = std::atoi(optarg);
+                break;
+            case 'd':
+                config.db_path = optarg;
+                break;
+            case 's':
+                config.static_dir = optarg;
+                break;
+            case 'l':
+                config.log_file = optarg;
+                break;
+            case '?':
+                config.show_help = true;
+                break;
+            case 'v':
+                config.show_version = true;
+                break;
+            default:
+                config.show_help = true;
+                break;
+        }
+    }
+    
+    return config;
+}
+
+void setupLogging(const std::string& log_file) {
+    // 创建日志目录
+    std::filesystem::path log_path(log_file);
+    std::filesystem::create_directories(log_path.parent_path());
+    
+    // 初始化文件日志记录器
+    if (utils::Logger::initFileLogger(log_file)) {
+        LOG_INFO << "日志系统已配置，输出到文件: " << log_file;
+    } else {
+        LOG_ERROR << "无法初始化文件日志记录器: " << log_file;
+    }
+    
+    // 设置日志级别（可以根据环境变量设置）
+    const char* log_level_env = std::getenv("LOG_LEVEL");
+    if (log_level_env) {
+        std::string level_str(log_level_env);
+        if (level_str == "DEBUG") {
+            utils::Logger::setGlobalLevel(utils::LogLevel::DEBUG);
+        } else if (level_str == "INFO") {
+            utils::Logger::setGlobalLevel(utils::LogLevel::INFO);
+        } else if (level_str == "WARN") {
+            utils::Logger::setGlobalLevel(utils::LogLevel::WARN);
+        } else if (level_str == "ERROR") {
+            utils::Logger::setGlobalLevel(utils::LogLevel::ERROR);
+        } else if (level_str == "FATAL") {
+            utils::Logger::setGlobalLevel(utils::LogLevel::FATAL);
+        }
+        LOG_INFO << "日志级别设置为: " << log_level_env;
+    }
+}
+
 void signalHandler(int signal)
 {
-    std::cout << "\n收到信号 " << signal << "，正在关闭服务器..." << std::endl;
+    LOG_INFO << "收到信号 " << signal << "，正在关闭服务器...";
     running = false;
 }
 
 int main(int argc, char *argv[])
 {
+    // 解析命令行参数
+    ServerConfig config = parseCommandLine(argc, argv);
+    
+    if (config.show_help) {
+        showHelp(argv[0]);
+        return 0;
+    }
+    
+    if (config.show_version) {
+        showVersion();
+        return 0;
+    }
+    
+    // 设置日志
+    setupLogging(config.log_file);
+    
     // 设置信号处理
     signal(SIGINT, signalHandler);
     signal(SIGTERM, signalHandler);
 
     try
     {
+        LOG_INFO << "SwiftChat Server v1.0.0 启动中...";
+        
         // 设置JWT密钥环境变量（如果未设置）
         if (!std::getenv("JWT_SECRET")) {
             setenv("JWT_SECRET", "your_secret_key_here", 1);
-            LOG_INFO << "JWT_SECRET environment variable set to default value";
+            LOG_WARN << "JWT_SECRET environment variable set to default value - 请在生产环境中设置安全密钥";
         }
 
         // 初始化数据库管理器
-        DatabaseManager db_manager("./db");
-        LOG_INFO << "Database manager initialized";
+        DatabaseManager db_manager(config.db_path);
+        LOG_INFO << "数据库管理器已初始化: " << config.db_path;
 
         // 创建HTTP服务器实例
-        http::HttpServer server(8080, 4); // 端口8080，4个工作线程
+        http::HttpServer server(config.http_port, 4); // 4个工作线程
 
-        // 设置静态文件目录 (使用绝对路径)
-        server.setStaticDirectory("/home/lbm/SwiftChat/static");
+        // 设置静态文件目录
+        server.setStaticDirectory(config.static_dir);
+        LOG_INFO << "静态文件目录: " << config.static_dir;
 
-        // 设置日志中间件 - 记录所有请求
+        // 设置中间件
         server.setMiddleware(middleware::auth);
 
         // 初始化服务
@@ -68,74 +200,42 @@ int main(int argc, char *argv[])
         user_service.registerRoutes(server);
         server_service.registerRoutes(server);
         
-        LOG_INFO << "All services registered successfully";
+        LOG_INFO << "所有服务已注册成功";
 
         // 创建并启动WebSocket服务器
         ws_server = std::make_unique<WebSocketServer>(db_manager);
-        LOG_INFO << "WebSocket server created";
+        LOG_INFO << "WebSocket服务器已创建";
 
-        std::cout << "=== SwiftChat 服务器 ===" << std::endl;
-        std::cout << "正在启动服务器..." << std::endl;
+        // 启动信息
+        std::cout << "SwiftChat Server v1.0.0 已启动" << std::endl;
+        std::cout << "HTTP 服务器: http://localhost:" << config.http_port << std::endl;
+        std::cout << "WebSocket 服务器: ws://localhost:" << config.ws_port << std::endl;
+        std::cout << "访问 http://localhost:" << config.http_port << " 开始使用" << std::endl;
+        std::cout << "按 Ctrl+C 退出服务器" << std::endl;
 
         // 在后台线程启动HTTP服务器
         std::thread server_thread([&server]()
                                   { 
-                                      LOG_INFO << "HTTP server thread starting...";
+                                      LOG_INFO << "HTTP服务器线程启动";
                                       server.run(); 
                                   });
 
         // 在后台线程启动WebSocket服务器
         std::thread websocket_thread([&]()
                                      {
-                                         LOG_INFO << "WebSocket server thread starting...";
+                                         LOG_INFO << "WebSocket服务器线程启动";
                                          try {
-                                             ws_server->run(8081); // WebSocket运行在8081端口
+                                             ws_server->run(config.ws_port);
                                          } catch (const std::exception& e) {
-                                             LOG_ERROR << "WebSocket server failed to start: " << e.what();
+                                             LOG_ERROR << "WebSocket服务器启动失败: " << e.what();
                                          }
                                      });
 
-        // 给WebSocket服务器一些时间来启动
+        // 给服务器一些时间来启动
         std::this_thread::sleep_for(std::chrono::milliseconds(100));
-
-        std::cout << "HTTP服务器已启动: http://localhost:8080" << std::endl;
-        std::cout << "WebSocket服务器已启动: ws://localhost:8081" << std::endl;
-        std::cout << "\n=== API端点 ===" << std::endl;
-        std::cout << "认证API:" << std::endl;
-        std::cout << "  - POST /api/v1/auth/register  - 用户注册" << std::endl;
-        std::cout << "  - POST /api/v1/auth/login     - 用户登录" << std::endl;
-        std::cout << "\n房间API:" << std::endl;
-        std::cout << "  - POST /api/v1/rooms          - 创建房间 (需要认证)" << std::endl;
-        std::cout << "  - GET  /api/v1/rooms          - 获取房间列表" << std::endl;
-        std::cout << "  - PATCH /api/v1/rooms/{id}    - 更新房间信息 (需要认证)" << std::endl;
-        std::cout << "  - DELETE /api/v1/rooms/{id}   - 删除房间 (需要认证)" << std::endl;
-        std::cout << "  - POST /api/v1/rooms/join     - 加入房间 (需要认证)" << std::endl;
-        std::cout << "  - POST /api/v1/rooms/leave    - 离开房间 (需要认证)" << std::endl;
         
-        std::cout << "\n用户API:" << std::endl;
-        std::cout << "  - GET  /api/v1/users/me       - 获取当前用户信息 (需要认证)" << std::endl;
-        std::cout << "  - GET  /api/v1/users          - 获取用户列表 (需要认证)" << std::endl;
-        std::cout << "  - GET  /api/v1/users/{id}     - 获取指定用户信息 (需要认证)" << std::endl;
-        std::cout << "  - GET  /api/v1/users/{id}/status - 获取用户状态 (需要认证)" << std::endl;
-        std::cout << "\n消息API:" << std::endl;
-        std::cout << "  - GET  /api/v1/messages       - 获取房间消息 (需要认证)" << std::endl;
-        std::cout << "\n系统API:" << std::endl;
-        std::cout << "  - GET  /api/v1/health            - 健康检查" << std::endl;
-        std::cout << "  - GET  /api/v1/info              - 服务器信息" << std::endl;
-        std::cout << "  - POST /api/echo              - Echo测试" << std::endl;
-        std::cout << "  - GET  /api/protected         - 受保护的端点 (需要认证)" << std::endl;
-        std::cout << "\n=== WebSocket支持 ===" << std::endl;
-        std::cout << "连接: ws://localhost:8081" << std::endl;
-        std::cout << "支持的消息类型:" << std::endl;
-        std::cout << "  - auth: 用户认证" << std::endl;
-        std::cout << "  - join_room: 加入房间" << std::endl;
-        std::cout << "  - leave_room: 离开房间" << std::endl;
-        std::cout << "  - chat_message: 发送聊天消息" << std::endl;
-        std::cout << "  - ping: 心跳检测" << std::endl;
-        std::cout << "\n静态文件: /static 目录" << std::endl;
-        std::cout << "访问 http://localhost:8080 查看聊天界面" << std::endl;
-        std::cout << "按 Ctrl+C 退出" << std::endl;
-        std::cout << "================================" << std::endl;
+        LOG_INFO << "HTTP服务器已启动在端口: " << config.http_port;
+        LOG_INFO << "WebSocket服务器已启动在端口: " << config.ws_port;
 
         // 主循环
         while (running)
@@ -144,17 +244,17 @@ int main(int argc, char *argv[])
         }
 
         // 停止服务器
-        std::cout << "\n正在停止服务器..." << std::endl;
+        LOG_INFO << "正在停止服务器...";
         
         // 停止WebSocket服务器
         if (ws_server) {
             ws_server->stop();
-            LOG_INFO << "WebSocket server stopped";
+            LOG_INFO << "WebSocket服务器已停止";
         }
         
         // 停止HTTP服务器
         server.stop();
-        LOG_INFO << "HTTP server stopped";
+        LOG_INFO << "HTTP服务器已停止";
 
         // 等待服务器线程结束
         if (server_thread.joinable())
@@ -167,10 +267,16 @@ int main(int argc, char *argv[])
             websocket_thread.join();
         }
 
-        std::cout << "所有服务器已关闭" << std::endl;
+        LOG_INFO << "所有服务器已关闭";
+        
+        // 关闭文件日志
+        utils::Logger::closeFileLogger();
+        
+        std::cout << "服务器已安全关闭" << std::endl;
     }
     catch (const std::exception &e)
     {
+        LOG_ERROR << "服务器错误: " << e.what();
         std::cerr << "Error: " << e.what() << std::endl;
         return 1;
     }
