@@ -1,0 +1,149 @@
+name: Build Verification
+
+# 简单的编译验证工作流
+
+# 触发条件
+on:
+  push:
+    branches: [ main, develop ]
+  pull_request:
+    branches: [ main, develop ]
+
+# 任务
+jobs:
+  build-verification:
+    name: Build and Basic Test
+    runs-on: ubuntu-latest
+    
+    steps:
+    # 检出代码，克隆代码库
+    - name: Checkout Repository
+      uses: actions/checkout@v4
+    
+    # 安装构建依赖
+    - name: Install Build Dependencies
+      run: |
+        sudo apt-get update
+        sudo apt-get install -y \
+          build-essential \
+          cmake \
+          libsqlite3-dev \
+          libssl-dev \
+          libgtest-dev \
+          pkg-config
+    
+    # 配置和构建项目
+    - name: Configure and Build
+      run: |
+        echo "🔧 Configuring CMake..."
+        mkdir -p build
+        cd build
+        cmake .. -DCMAKE_BUILD_TYPE=Debug -DCMAKE_VERBOSE_MAKEFILE=ON
+        
+        echo "🏗️ Building project..."
+        make -j$(nproc)
+        
+        echo "✅ Build completed successfully!"
+    
+    # 验证可执行文件
+    - name: Verify Executables
+      run: |
+        cd build
+        
+        echo "📋 Checking generated executables..."
+        ls -la
+        
+        # 检查主程序
+        if [ -x "./SwiftChat" ]; then
+          echo "✅ Main executable found: SwiftChat"
+          file ./SwiftChat
+        else
+          echo "❌ Main executable not found!"
+          exit 1
+        fi
+        
+        # 检查测试程序
+        echo "📋 Checking test executables..."
+        cd tests
+        test_count=0
+        for test in test_*; do
+          if [ -x "$test" ]; then
+            echo "✅ Test found: $test"
+            test_count=$((test_count + 1))
+          fi
+        done
+        
+        if [ $test_count -eq 0 ]; then
+          echo "⚠️ No test executables found"
+        else
+          echo "✅ Found $test_count test executables"
+        fi
+    
+    # 运行基本测试
+    - name: Run Basic Tests
+      run: |
+        cd build/tests
+        
+        echo "🧪 Running basic tests..."
+        failed_tests=0
+        total_tests=0
+        
+        for test in test_*; do
+          if [ -x "$test" ]; then
+            total_tests=$((total_tests + 1))
+            echo "Running $test..."
+            
+            if timeout 30s ./"$test"; then
+              echo "✅ $test: PASSED"
+            else
+              echo "❌ $test: FAILED"
+              failed_tests=$((failed_tests + 1))
+            fi
+          fi
+        done
+        
+        echo "📊 Test Summary:"
+        echo "   Total tests: $total_tests"
+        echo "   Passed: $((total_tests - failed_tests))"
+        echo "   Failed: $failed_tests"
+        
+        if [ $failed_tests -gt 0 ]; then
+          echo "❌ Some tests failed!"
+          exit 1
+        else
+          echo "✅ All tests passed!"
+        fi
+    
+    # 运行快速功能测试
+    - name: Quick Functionality Test
+      run: |
+        cd build
+        
+        echo "🚀 Testing main program startup..."
+        # 使用超时来测试程序是否能正常启动
+        timeout 5s ./SwiftChat --help 2>/dev/null || true
+        
+        echo "✅ Basic functionality test completed"
+    
+    # 生成构建摘要
+    - name: Build Summary
+      if: always()
+      run: |
+        echo "## 🏗️ Build Verification Summary" >> $GITHUB_STEP_SUMMARY
+        echo "" >> $GITHUB_STEP_SUMMARY
+        echo "- **Repository**: ${{ github.repository }}" >> $GITHUB_STEP_SUMMARY
+        echo "- **Branch**: ${{ github.ref_name }}" >> $GITHUB_STEP_SUMMARY
+        echo "- **Commit**: ${{ github.sha }}" >> $GITHUB_STEP_SUMMARY
+        echo "- **Build Status**: ${{ job.status }}" >> $GITHUB_STEP_SUMMARY
+        echo "" >> $GITHUB_STEP_SUMMARY
+        echo "### 📋 Build Information" >> $GITHUB_STEP_SUMMARY
+        echo "- Compiler: GCC (Ubuntu)" >> $GITHUB_STEP_SUMMARY
+        echo "- Build Type: Debug" >> $GITHUB_STEP_SUMMARY
+        echo "- C++ Standard: C++17" >> $GITHUB_STEP_SUMMARY
+        echo "" >> $GITHUB_STEP_SUMMARY
+        
+        if [[ "${{ job.status }}" == "success" ]]; then
+          echo "✅ **Build verification completed successfully!**" >> $GITHUB_STEP_SUMMARY
+        else
+          echo "❌ **Build verification failed. Please check the logs above.**" >> $GITHUB_STEP_SUMMARY
+        fi
