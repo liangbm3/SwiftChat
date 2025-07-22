@@ -341,8 +341,8 @@
 <script>
 document.addEventListener('DOMContentLoaded', () => {
     // API 配置
-    const API_BASE_URL = 'http://localhost:8080';
-    const WEBSOCKET_URL = 'ws://localhost:8081';
+    const API_BASE_URL = 'https://swiftchat.demo.liangbm3.site';
+    const WEBSOCKET_URL = 'wss://swiftchat.demo.liangbm3.site/ws';
 
     // 全局状态
     let authToken = null;
@@ -398,9 +398,9 @@ document.addEventListener('DOMContentLoaded', () => {
             if (msgData.username) {
                 // 如果WebSocket消息中包含用户名，优先使用
                 senderName = msgData.username;
-            } else if (msgData.sender && msgData.sender.username) {
-                // 如果是从HTTP API获取的历史消息，使用sender.username
-                senderName = msgData.sender.username;
+            } else if (msgData.user_name) {
+                // 如果是从HTTP API获取的历史消息，使用user_name
+                senderName = msgData.user_name;
             } else if (msgData.user_id === currentUserId) {
                 // 如果是当前用户，使用当前用户名
                 senderName = currentUsername;
@@ -690,13 +690,16 @@ document.addEventListener('DOMContentLoaded', () => {
     // 获取历史消息
     async function fetchMessages(roomId) {
         try {
-            const result = await handleApiRequest(`${API_BASE_URL}/api/v1/messages?room_id=${roomId}&limit=50`, {
+            const result = await handleApiRequest(`${API_BASE_URL}/api/v1/messages?room_id=${roomId}&limit=100`, {
                 headers: { 'Authorization': `Bearer ${authToken}` }
             });
             if (result.data.messages) {
                 result.data.messages.forEach(displayMessage);
             }
-        } catch (error) {}
+        } catch (error) {
+            console.error('获取历史消息失败:', error);
+            showApiStatus('获取历史消息失败', true);
+        }
     }
 
 
