@@ -19,6 +19,8 @@ jobs:
     # 检出代码，克隆代码库
     - name: Checkout Repository
       uses: actions/checkout@v4
+      with:
+        submodules: 'recursive' # 检出子模块
     
     # 安装构建依赖
     - name: Install Build Dependencies
