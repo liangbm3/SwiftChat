@@ -125,7 +125,12 @@ jobs:
         
         echo "🚀 Testing main program startup..."
         # 使用超时来测试程序是否能正常启动
-        timeout 5s ./SwiftChat --help 2>/dev/null || true
+        if timeout 5s ./SwiftChat --help 2>/dev/null; then
+          echo "✅ Main program '--help' command executed successfully"
+        else
+          echo "❌ Main program '--help' command failed to execute"
+          exit 1
+        fi
         
         echo "✅ Basic functionality test completed"
     
