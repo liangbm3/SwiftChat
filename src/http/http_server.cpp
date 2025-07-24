@@ -205,7 +205,7 @@ namespace http
                         // 有数据可读，从epoller中移除并交给线程池处理
                         epoller_.removeFd(fd);
                         thread_pool_.enqueue([this, fd]()
-                                             { handleClient(fd); return 0; });
+                                             { handleClient(fd); });
                     }
                     else
                     {
