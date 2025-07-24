@@ -39,6 +39,9 @@ include_directories(
 # 设置安装路径为bin目录
 set(CMAKE_INSTALL_PREFIX "${CMAKE_BINARY_DIR}/bin")
 
+# 启用测试功能
+enable_testing()
+
 # 添加src子目录到构建系统
 add_subdirectory(src)
 
