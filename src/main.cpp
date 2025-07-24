@@ -19,6 +19,7 @@
 #include <getopt.h>
 #include <fstream>
 #include <filesystem>
+#include <locale>
 
 
 std::atomic<bool> running(true);
@@ -165,6 +166,10 @@ void signalHandler(int signal)
 
 int main(int argc, char *argv[])
 {
+
+    // 设置全局locale
+    std::locale::global(std::locale("C"));
+
     // 解析命令行参数
     ServerConfig config = parseCommandLine(argc, argv);
     
