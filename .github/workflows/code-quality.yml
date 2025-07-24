@@ -1,0 +1,60 @@
+name: Code Quality
+
+on:
+  push:
+    branches: [ main, develop ]
+  pull_request:
+    branches: [ main, develop ]
+
+# 任务
+jobs:
+  code-quality:
+    name: Code Quality Check
+    runs-on: ubuntu-latest
+    
+    steps:
+    # 检出代码，克隆代码库
+    - name: Checkout Repository
+      uses: actions/checkout@v4
+      with:
+        submodules: 'recursive' # 检出子模块
+    
+    # 安装 Cppcheck
+    - name: Install Cppcheck
+      run: |
+        sudo apt-get update
+        sudo apt-get install -y cppcheck
+    
+    # 运行 Cppcheck
+    - name: Run Cppcheck
+      run: |
+        cppcheck --enable=all --std=c++17 --error-exitcode=1 \
+          --suppress=missingIncludeSystem \
+          --suppress=unusedFunction \
+          --suppress=unmatchedSuppression \
+          src/ 2> cppcheck_report.txt
+      continue-on-error: true
+
+    # 检查cppcheck报告是否有产出报告（即是否发现问题）
+    - name: check for Cppcheck issues
+      id: cppcheck
+      run: |
+        if [ -s cppcheck_report.txt ]; then
+          echo "Cppcheck found issues. Failing the workflow."
+          echo "exit_code=1" >> $GITHUB_ENV
+        else
+          echo "No Cppcheck issues found."
+          echo "exit_code=0" >> $GITHUB_ENV
+        fi
+
+    # 上传 Cppcheck 报告
+    - name: Upload Cppcheck Report
+      if: always() && steps.cppcheck.outputs.exit_code == '1'
+      uses: actions/upload-artifact@v4
+      with:
+        name: cppcheck_report
+        path: cppcheck_report.txt
+
+    # 根据检查结果决定工作流最终状态
+    - name: Fail workflow if issues were found
+      run: exit ${{ env.exit_code }}
