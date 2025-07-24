@@ -23,7 +23,7 @@ Epoller::~Epoller()
 
 bool Epoller::addFd(int fd, uint32_t events)
 {
-    if(fd<0)
+    if (fd < 0)
     {
         return false;
     }
