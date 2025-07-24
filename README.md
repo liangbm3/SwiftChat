@@ -35,7 +35,7 @@
 - 💬 **实时聊天** - 基于 WebSocket 的即时消息传递
 - 🏠 **多房间支持** - 创建、加入、管理多个聊天室
 - 💾 **消息持久化** - 使用 SQLite 数据库保存聊天记录
-- 🔄 **自动重连** - 网络中断时自动重新连接
+- ⚡ **高性能** - 多线程架构，支持大量并发连接
 - 🛡️ **线程安全** - 完善的并发控制和错误处理
 - 📡 **RESTful API** - 完整的 REST API 接口
 - 🔧 **中间件支持** - 可扩展的认证中间件
@@ -66,28 +66,6 @@
 
 ## 🚀 快速开始
 
-### 方法一：一键设置（推荐）
-
-```bash
-# 克隆项目（包含 submodules）
-git clone --recursive https://github.com/liangbm3/SwiftChat.git
-cd SwiftChat
-
-# 设置 JWT 密钥
-export JWT_SECRET="your_super_secret_jwt_key_here"
-
-# 创建构建目录并编译
-mkdir build && cd build
-cmake ..
-make -j$(nproc)
-
-# 启动服务器 (构建后自动安装到 bin 目录)
-cd bin
-./SwiftChat
-```
-
-### 方法二：手动设置
-
 #### 1. 克隆项目
 
 ```bash
@@ -100,7 +78,7 @@ cd SwiftChat
 **Ubuntu/Debian:**
 ```bash
 sudo apt update
-sudo apt install build-essential cmake libsqlite3-dev libssl-dev
+sudo apt install build-essential cmake libsqlite3-dev libssl-dev libboost-all-dev
 ```
 
 **CentOS/RHEL:**
@@ -164,45 +142,17 @@ cd bin
 
 ```
 SwiftChat/
-├── src/                    # 源代码
+├── src/                   # 源代码
 │   ├── main.cpp           # 程序入口
 │   ├── http/              # HTTP 服务器
-│   │   ├── http_server.cpp/hpp
-│   │   ├── http_request.cpp/hpp
-│   │   └── http_response.cpp/hpp
 │   ├── websocket/         # WebSocket 服务器
-│   │   └── websocket_server.cpp/hpp
 │   ├── db/                # 数据库层
-│   │   ├── database_manager.cpp/hpp
-│   │   ├── database_connection.cpp/hpp
-│   │   ├── user_repository.cpp/hpp
-│   │   ├── room_repository.cpp/hpp
-│   │   └── message_repository.cpp/hpp
 │   ├── service/           # 业务逻辑层
-│   │   ├── auth_service.cpp/hpp
-│   │   ├── user_service.cpp/hpp
-│   │   ├── room_service.cpp/hpp
-│   │   ├── message_service.cpp/hpp
-│   │   └── server_service.cpp/hpp
 │   ├── middleware/        # 中间件
-│   │   └── auth_middleware.cpp/hpp
 │   ├── model/             # 数据模型
-│   │   ├── user.cpp/hpp
-│   │   ├── room.cpp/hpp
-│   │   └── message.cpp/hpp
 │   └── utils/             # 工具类
-│       ├── logger.cpp/hpp
-│       ├── jwt_utils.cpp/hpp
-│       ├── thread_pool.cpp/hpp
-│       └── timer.cpp/hpp
 ├── static/                # 前端资源
-│   ├── index.html         # 主页面
-│   └── test.html          # 测试页面
 ├── tests/                 # 单元测试
-│   ├── db/                # 数据库测试
-│   ├── http/              # HTTP 测试
-│   ├── model/             # 模型测试
-│   └── utils/             # 工具测试
 ├── docs/                  # 文档
 ├── scripts/               # 测试脚本
 ├── third_party/           # 第三方库
@@ -248,15 +198,20 @@ make -j$(nproc)
 # 运行所有测试
 ctest --verbose
 
-# 运行特定测试
-./tests/test_database_manager
-./tests/test_http_server
-./tests/test_http_request
-./tests/test_http_response
-./tests/test_user
-./tests/test_room
-./tests/test_message
+# 运行特定测试可执行文件
+cd tests
+./test_database_manager
+./test_http_server
+./test_http_request
+./test_http_response
+./test_user
+./test_room
+./test_message
+./test_logger
+./test_thread_pool
+./test_timer
 ```
+
 
 ### 测试脚本
 

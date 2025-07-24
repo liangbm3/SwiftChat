@@ -9,7 +9,7 @@
 class DatabaseConnection
 {
 public:
-    DatabaseConnection(const std::string &db_path);
+    explicit DatabaseConnection(const std::string &db_path);
     virtual ~DatabaseConnection();//后面需要通过基类指针来删除一个派生类，所以需要将基类的析构函数声明为虚函数
 
     bool isConnected() const { return db_ != nullptr; }

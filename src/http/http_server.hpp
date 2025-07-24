@@ -7,6 +7,7 @@
 #include "utils/thread_pool.hpp"
 #include "http/http_request.hpp"
 #include "http/http_response.hpp"
+#include "epoller.hpp"
 
 namespace http
 {
@@ -63,6 +64,8 @@ namespace http
         // MIME类型映射表，设为静态常量以提高效率
         static const std::unordered_map<std::string, std::string> MIME_TYPES;
 
-        void handleClient(int client_fd);
+        Epoller epoller_; // 使用Epoller处理IO事件
+        void handleClient(int client_fd); // 核心客户端处理逻辑
+        static void setNoBlocking(int fd);
     };
 }

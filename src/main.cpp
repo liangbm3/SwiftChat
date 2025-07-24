@@ -19,6 +19,7 @@
 #include <getopt.h>
 #include <fstream>
 #include <filesystem>
+#include <locale>
 
 
 std::atomic<bool> running(true);
@@ -30,7 +31,8 @@ struct ServerConfig {
     int ws_port = 8081;
     std::string db_path = "./chat.db";
     std::string static_dir = "./static";
-    std::string log_file = "./logs/swiftchat.log";
+    std::string log_file = ""; // 将在运行时根据日期生成
+    std::string log_dir = "./logs"; // 日志目录
     bool show_help = false;
     bool show_version = false;
 };
@@ -43,9 +45,10 @@ void showHelp(const char* program_name) {
     std::cout << "  --ws-port PORT       WebSocket 服务器端口 (默认: 8081)\n";
     std::cout << "  --db-path PATH       数据库文件路径 (默认: ./chat.db)\n";
     std::cout << "  --static-dir DIR     静态文件目录 (默认: ./static)\n";
-    std::cout << "  --log-file FILE      日志文件路径 (默认: ./logs/swiftchat.log)\n";
+    std::cout << "  --log-dir DIR        日志文件目录 (默认: ./logs)\n";
     std::cout << "  --help               显示帮助信息\n";
     std::cout << "  --version            显示版本信息\n\n";
+    std::cout << "注意: 日志文件将按日期命名 (如: swiftchat_2025-07-24.log)\n\n";
     std::cout << "示例:\n";
     std::cout << "  " << program_name << " --http-port 9000 --ws-port 9001\n";
     std::cout << "  " << program_name << " --db-path /var/lib/swiftchat/chat.db\n";
@@ -64,7 +67,7 @@ ServerConfig parseCommandLine(int argc, char* argv[]) {
         {"ws-port", required_argument, 0, 'w'},
         {"db-path", required_argument, 0, 'd'},
         {"static-dir", required_argument, 0, 's'},
-        {"log-file", required_argument, 0, 'l'},
+        {"log-dir", required_argument, 0, 'l'},
         {"help", no_argument, 0, '?'},
         {"version", no_argument, 0, 'v'},
         {0, 0, 0, 0}
@@ -86,7 +89,7 @@ ServerConfig parseCommandLine(int argc, char* argv[]) {
                 config.static_dir = optarg;
                 break;
             case 'l':
-                config.log_file = optarg;
+                config.log_dir = optarg;
                 break;
             case '?':
                 config.show_help = true;
@@ -103,7 +106,28 @@ ServerConfig parseCommandLine(int argc, char* argv[]) {
     return config;
 }
 
-void setupLogging(const std::string& log_file) {
+// 生成基于日期的日志文件名
+std::string generateLogFileName(const std::string& log_dir) {
+    // 获取当前时间
+    auto now = std::chrono::system_clock::now();
+    auto time_t = std::chrono::system_clock::to_time_t(now);
+    auto tm = *std::localtime(&time_t);
+    
+    // 格式化日期字符串 (YYYY-MM-DD)
+    char date_str[32];
+    std::strftime(date_str, sizeof(date_str), "%Y-%m-%d", &tm);
+    
+    // 创建完整的日志文件路径
+    std::filesystem::path log_path(log_dir);
+    log_path /= std::string("swiftchat_") + date_str + ".log";
+    
+    return log_path.string();
+}
+
+void setupLogging(const std::string& log_dir) {
+    // 生成基于日期的日志文件名
+    std::string log_file = generateLogFileName(log_dir);
+    
     // 创建日志目录
     std::filesystem::path log_path(log_file);
     std::filesystem::create_directories(log_path.parent_path());
@@ -142,6 +166,10 @@ void signalHandler(int signal)
 
 int main(int argc, char *argv[])
 {
+
+    // 设置全局locale
+    std::locale::global(std::locale("C"));
+
     // 解析命令行参数
     ServerConfig config = parseCommandLine(argc, argv);
     
@@ -156,7 +184,7 @@ int main(int argc, char *argv[])
     }
     
     // 设置日志
-    setupLogging(config.log_file);
+    setupLogging(config.log_dir);
     
     // 设置信号处理
     signal(SIGINT, signalHandler);
