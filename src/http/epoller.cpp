@@ -35,7 +35,7 @@ bool Epoller::addFd(int fd, uint32_t events)
 
 bool Epoller::modifyFd(int fd, uint32_t events)
 {
-    if(fd<0)
+    if (fd < 0)
     {
         return false;
     }
