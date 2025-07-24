@@ -27,7 +27,7 @@ bool Epoller::addFd(int fd, uint32_t events)
     {
         return false;
     }
-    struct epoll_event event={0};
+    struct epoll_event event = {0};
     event.data.fd = fd;
     event.events = events;
     return epoll_ctl(epoll_fd_, EPOLL_CTL_ADD, fd, &event) == 0;
