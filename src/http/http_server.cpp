@@ -1,27 +1,45 @@
 #include "http_server.hpp"
-#include "utils/logger.hpp"
-#include <iostream>
-#include <fstream>
-#include <sstream>
-#include <sys/socket.h>
-#include <netinet/in.h>
-#include <arpa/inet.h>
-#include <unistd.h>
+
+#include <cerrno>
 #include <csignal>
-#include <sys/stat.h>
+#include <cstring>
+#include <fcntl.h>
+#include <fstream>
+#include <iostream>
+#include <sstream>
+#include <unistd.h>
 #include <vector>
+
+#include <arpa/inet.h>
+#include <netinet/in.h>
+#include <sys/socket.h>
+#include <sys/stat.h>
+
+#include "utils/logger.hpp"
 
 namespace http
 {
     // 初始化静态MIME类型映射表
     const std::unordered_map<std::string, std::string> HttpServer::MIME_TYPES = {
-        {"html", "text/html"}, {"css", "text/css"}, {"js", "application/javascript"}, {"json", "application/json"}, {"png", "image/png"}, {"jpg", "image/jpeg"}, {"jpeg", "image/jpeg"}, {"gif", "image/gif"}, {"svg", "image/svg+xml"}, {"ico", "image/x-icon"}, {"txt", "text/plain"}};
+        {"html", "text/html"},
+        {"css", "text/css"},
+        {"js", "application/javascript"},
+        {"json", "application/json"},
+        {"png", "image/png"},
+        {"jpg", "image/jpeg"},
+        {"jpeg", "image/jpeg"},
+        {"gif", "image/gif"},
+        {"svg", "image/svg+xml"},
+        {"ico", "image/x-icon"},
+        {"txt", "text/plain"}};
 
     HttpServer::HttpServer(int port, size_t thread_count)
-        : port_(port), running_(false), thread_pool_(thread_count)
+        : port_(port),
+          running_(false),
+          thread_pool_(thread_count),
+          epoller_(),
+          static_dir_("./static")
     {
-        static_dir_ = "./static"; // 设置静态文件目录
-
         // 忽略SIGPIPE信号，避免写入已关闭的套接字导致程序终止
         signal(SIGPIPE, SIG_IGN);
 
@@ -56,13 +74,21 @@ namespace http
             throw std::runtime_error("Failed to bind socket");
         }
 
-        // 开始监听
-        // SOMAXCONN 是一个宏定义，表示通过 listen 函数可指定的最大队列长度，其值为 4096。
+        // 开始监听连接
         if (listen(server_fd_, SOMAXCONN) < 0)
         {
             LOG_ERROR << "Failed to listen on socket: " << strerror(errno);
             close(server_fd_);
             throw std::runtime_error("Failed to listen on socket");
+        }
+
+        setNoBlocking(server_fd_); // 设置非阻塞模式
+        // 将监听套接字添加到epoll中，监听读事件，使用ET
+        if (!epoller_.addFd(server_fd_, EPOLLIN | EPOLLET))
+        {
+            LOG_ERROR << "Failed to add server socket to epoll: " << strerror(errno);
+            close(server_fd_);
+            throw std::runtime_error("Failed to add server socket to epoll");
         }
     }
 
@@ -95,47 +121,97 @@ namespace http
 
         while (running_)
         {
-            sockaddr_in client_addr{};
-            socklen_t client_addr_len = sizeof(client_addr);
-            // 接受客户端连接
-            int client_fd = accept(server_fd_, (struct sockaddr *)&client_addr, &client_addr_len);
-            if (client_fd < 0)
+            // 等待epoll事件（设置1秒超时，以便能够响应关闭信号）
+            int event_count = epoller_.wait(1000); // 1000ms超时
+            if (event_count < 0)
             {
-                if (errno == EINTR || !running_)
+                if (errno == EINTR)
                 {
-                    // 被中断或服务器停止
-                    break;
+                    continue; // 被信号中断，继续等待
                 }
-                LOG_ERROR << "Failed to accept client connection: " << strerror(errno);
-                continue; // 继续等待下一个连接
+                LOG_ERROR << "Epoll wait error: " << strerror(errno);
+                break; // 其他错误，退出循环
             }
-
-            // 设置客户端套接字超时
-            struct timeval timeout;
-            timeout.tv_sec = 30; // 30秒超时
-            timeout.tv_usec = 0;
-            setsockopt(client_fd, SOL_SOCKET, SO_RCVTIMEO, &timeout, sizeof(timeout));
-            setsockopt(client_fd, SOL_SOCKET, SO_SNDTIMEO, &timeout, sizeof(timeout));
-
-            LOG_INFO << "Accepted connection from " << inet_ntoa(client_addr.sin_addr)
-                     << ":" << ntohs(client_addr.sin_port) << " (fd: " << client_fd << ")";
-            thread_pool_.enqueue([this, client_fd]()
-                                 {
-                handleClient(client_fd); // 处理客户端连接
-                return 0; });
+            else if (event_count == 0)
+            {
+                // 超时，没有事件，继续循环（这会检查running_标志）
+                continue;
+            }
+            // 遍历所有就绪事件
+            for (int i = 0; i < event_count; i++)
+            {
+                int fd = epoller_.getEventFd(i);
+                uint32_t events = epoller_.getEvents(i);
+                if (fd == server_fd_)
+                {
+                    // 新连接到达
+                    // ET模式需要循环accept直到没有连接
+                    while (true)
+                    {
+                        sockaddr_in client_addr{};
+                        socklen_t client_addr_len = sizeof(client_addr);
+                        int client_fd =
+                            accept(server_fd_, (struct sockaddr *)&client_addr, &client_addr_len);
+                        if (client_fd < 0)
+                        {
+                            if (errno == EAGAIN || errno == EWOULDBLOCK)
+                            {
+                                break; // 没有更多连接，退出循环
+                            }
+                            LOG_ERROR << "Failed to accept connection: " << strerror(errno);
+                            break;
+                        }
+                        LOG_INFO << "Accepted new connection from " << inet_ntoa(client_addr.sin_addr)
+                                 << ":" << ntohs(client_addr.sin_port);
+                        // 将新客户端设置为非阻塞，并添加到epoll中
+                        setNoBlocking(client_fd);
+                        epoller_.addFd(client_fd,
+                                       EPOLLIN | EPOLLET | EPOLLRDHUP); // 监听读事件和连接关闭事件
+                    }
+                }
+                else
+                {
+                    // 处理客户端套接字事件
+                    if (events & (EPOLLRDHUP | EPOLLHUP | EPOLLERR))
+                    {
+                        // 错误或连接关闭
+                        LOG_INFO << "Client fd " << fd << " closed or error";
+                        epoller_.removeFd(fd);
+                        close(fd);
+                    }
+                    else if (events & EPOLLIN)
+                    {
+                        // 有数据可读，从epoller中移除并交给线程池处理
+                        epoller_.removeFd(fd);
+                        thread_pool_.enqueue([this, fd]()
+                                             { handleClient(fd); return 0; });
+                    }
+                    else
+                    {
+                        LOG_WARN << "Unhandled epoll event for fd " << fd << ": " << events;
+                    }
+                }
+            }
         }
+        
+        LOG_INFO << "HTTP server main loop exited";
     }
 
     void HttpServer::stop()
     {
+        LOG_INFO << "Stopping HTTP server...";
         running_ = false;
-        if (server_fd_ != -1)
+        if (server_fd_ >= 0)
         {
             // 关闭服务器套接字以中断accept()调用
-            shutdown(server_fd_, SHUT_RDWR);
+            if (shutdown(server_fd_, SHUT_RDWR) < 0)
+            {
+                LOG_WARN << "Failed to shutdown server socket: " << strerror(errno);
+            }
             close(server_fd_);
             server_fd_ = -1;
         }
+        LOG_INFO << "HTTP server stop() completed";
     }
 
     // 核心客户端处理逻辑
@@ -146,74 +222,40 @@ namespace http
             const size_t BUFFER_SIZE = 8192;
             char buffer[BUFFER_SIZE];
             std::string request_data;
-
-            // 1. 读取请求数据 - 改进版，支持分段接收
-            bool headers_complete = false;
-            size_t expected_content_length = 0;
-            
+            // 非阻塞循环读取，直到缓冲区为空
             while (true)
             {
                 ssize_t bytes_received = recv(client_fd, buffer, BUFFER_SIZE - 1, 0);
-                if (bytes_received <= 0)
+                if (bytes_received > 0)
                 {
-                    break; // 连接断开或错误
+                    request_data.append(buffer, bytes_received);
                 }
-                
-                request_data.append(buffer, bytes_received);
-                
-                // 检查是否接收到完整的头部
-                if (!headers_complete)
+                else if (bytes_received == 0)
                 {
-                    size_t header_end = request_data.find("\r\n\r\n");
-                    if (header_end != std::string::npos)
+                    LOG_INFO << "Client fd " << client_fd << " disconnected.";
+                    close(client_fd);
+                    return; // 客户端已关闭连接
+                }
+                else
+                {
+                    if (errno == EAGAIN || errno == EWOULDBLOCK)
                     {
-                        headers_complete = true;
-                        
-                        // 解析Content-Length
-                        std::string headers = request_data.substr(0, header_end);
-                        size_t content_length_pos = headers.find("Content-Length:");
-                        if (content_length_pos != std::string::npos)
-                        {
-                            size_t value_start = headers.find(':', content_length_pos) + 1;
-                            size_t value_end = headers.find('\r', value_start);
-                            std::string length_str = headers.substr(value_start, value_end - value_start);
-                            
-                            // 去除空格
-                            length_str.erase(0, length_str.find_first_not_of(" \t"));
-                            length_str.erase(length_str.find_last_not_of(" \t") + 1);
-                            
-                            try 
-                            {
-                                expected_content_length = std::stoul(length_str);
-                            }
-                            catch (...)
-                            {
-                                expected_content_length = 0;
-                            }
-                        }
+                        // 没有更多数据可读，退出循环
+                        break;
                     }
-                }
-                
-                // 如果头部已完成，检查是否接收到足够的请求体
-                if (headers_complete)
-                {
-                    size_t headers_size = request_data.find("\r\n\r\n") + 4;
-                    size_t current_body_size = request_data.size() - headers_size;
-                    
-                    if (current_body_size >= expected_content_length)
-                    {
-                        break; // 接收完整
-                    }
-                }
-                
-                // 如果是GET请求或其他没有请求体的请求，在收到头部后立即处理
-                if (headers_complete && expected_content_length == 0)
-                {
-                    break;
+                    LOG_ERROR << "recv error on fd " << client_fd << ": " << strerror(errno);
+                    close(client_fd);
+                    return; // 发生错误，关闭连接
                 }
             }
+            if (request_data.empty())
+            {
+                LOG_WARN << "Received empty request from client fd " << client_fd;
+                close(client_fd);
+                return; // 没有数据，直接关闭连接
+            }
 
-            // 2. [适配] 使用新的 HttpRequest API
+            // [适配] 使用新的 HttpRequest API
             auto request_opt = HttpRequest::parse(request_data);
             HttpResponse response;
 
@@ -233,7 +275,8 @@ namespace http
             // 添加CORS头和自定义响应头
             response.withHeader("Access-Control-Allow-Origin", "*")
                 .withHeader("Access-Control-Allow-Methods", "GET, POST, PUT, DELETE, OPTIONS")
-                .withHeader("Access-Control-Allow-Headers", "Content-Type, Authorization, X-Requested-With")
+                .withHeader("Access-Control-Allow-Headers",
+                            "Content-Type, Authorization, X-Requested-With")
                 .withHeader("X-Server", "SwiftChat/1.0");
             // 4. 发送响应
             std::string response_str = response.toString();
@@ -259,7 +302,8 @@ namespace http
             return HttpResponse::Ok()
                 .withHeader("Access-Control-Allow-Origin", "*")
                 .withHeader("Access-Control-Allow-Methods", "GET, POST, PUT, DELETE, OPTIONS")
-                .withHeader("Access-Control-Allow-Headers", "Content-Type, Authorization, X-Requested-With")
+                .withHeader("Access-Control-Allow-Headers",
+                            "Content-Type, Authorization, X-Requested-With")
                 .withHeader("Access-Control-Max-Age", "86400") // 缓存24小时
                 .withBody("", "text/plain");
         }
@@ -276,7 +320,7 @@ namespace http
                     // 创建一个可修改的请求副本来设置路径参数
                     HttpRequest modifiableRequest = request;
                     modifiableRequest.setPathParams(pathParams);
-                    
+
                     // 检查这个路由是否需要验证
                     if (route.use_auth_middleware && middleware_)
                     {
@@ -342,49 +386,73 @@ namespace http
     }
 
     // 路径参数匹配和提取实现
-    bool HttpServer::matchPath(const std::string& pattern, const std::string& path, std::unordered_map<std::string, std::string>& params)
+    bool HttpServer::matchPath(const std::string &pattern,
+                               const std::string &path,
+                               std::unordered_map<std::string, std::string> &params)
     {
         params.clear();
-        
+
         // 分割模式和路径
-        auto splitPath = [](const std::string& str) -> std::vector<std::string> {
+        auto splitPath = [](const std::string &str) -> std::vector<std::string>
+        {
             std::vector<std::string> segments;
             std::stringstream ss(str);
             std::string segment;
-            while (std::getline(ss, segment, '/')) {
-                if (!segment.empty()) {
+            while (std::getline(ss, segment, '/'))
+            {
+                if (!segment.empty())
+                {
                     segments.push_back(segment);
                 }
             }
             return segments;
         };
-        
+
         auto patternSegments = splitPath(pattern);
         auto pathSegments = splitPath(path);
-        
+
         // 段数必须相同
-        if (patternSegments.size() != pathSegments.size()) {
+        if (patternSegments.size() != pathSegments.size())
+        {
             return false;
         }
-        
+
         // 逐段匹配
-        for (size_t i = 0; i < patternSegments.size(); ++i) {
-            const std::string& patternSeg = patternSegments[i];
-            const std::string& pathSeg = pathSegments[i];
-            
+        for (size_t i = 0; i < patternSegments.size(); ++i)
+        {
+            const std::string &patternSeg = patternSegments[i];
+            const std::string &pathSeg = pathSegments[i];
+
             // 检查是否为参数段（以{开头并以}结尾）
-            if (patternSeg.length() > 2 && patternSeg.front() == '{' && patternSeg.back() == '}') {
+            if (patternSeg.length() > 2 && patternSeg.front() == '{' && patternSeg.back() == '}')
+            {
                 // 提取参数名（去掉{}）
                 std::string paramName = patternSeg.substr(1, patternSeg.length() - 2);
                 params[paramName] = pathSeg;
-            } else {
+            }
+            else
+            {
                 // 精确匹配
-                if (patternSeg != pathSeg) {
+                if (patternSeg != pathSeg)
+                {
                     return false;
                 }
             }
         }
-        
+
         return true;
+    }
+    void HttpServer::setNoBlocking(int fd)
+    {
+        int flags = fcntl(fd, F_GETFL, 0);
+        if (flags == -1)
+        {
+            LOG_ERROR << "Failed to get file descriptor flags: " << strerror(errno);
+            return;
+        }
+        if (fcntl(fd, F_SETFL, flags | O_NONBLOCK) == -1)
+        {
+            LOG_ERROR << "Failed to set file descriptor to non-blocking: " << strerror(errno);
+        }
     }
 }

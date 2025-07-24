@@ -9,6 +9,7 @@ add_executable(SwiftChat
     http/http_server.cpp
     http/http_request.cpp
     http/http_response.cpp
+    http/epoller.cpp
     utils/logger.cpp
     utils/thread_pool.cpp
     utils/timer.cpp
