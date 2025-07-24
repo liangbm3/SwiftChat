@@ -226,15 +226,15 @@ void WebSocketServer::on_message(connection_hdl hdl, websocket_server::message_p
                     return;
                 }
 
-                std::string user_id = *verified_user_id;
+                std::string verified_id = *verified_user_id;
 
                 { // 进入临界区
                     std::lock_guard<std::mutex> lock(connection_mutex_);
                     // 检查用户是否已有连接
-                    auto old_connection_it = user_connections_.find(user_id);
+                    auto old_connection_it = user_connections_.find(verified_id);
                     if (old_connection_it != user_connections_.end())
                     {
-                        LOG_INFO << "User " << user_id << " already has a connection. Closing old connection.";
+                        LOG_INFO << "User " << verified_id << " already has a connection. Closing old connection.";
                         // 获取旧连接句柄
                         // 向旧连接发送通知
                         json reason = {
@@ -247,7 +247,7 @@ void WebSocketServer::on_message(connection_hdl hdl, websocket_server::message_p
                         }
                         catch (const std::exception &e)
                         {
-                            LOG_ERROR << "Error closing old connection for user " << user_id << ": " << e.what();
+                            LOG_ERROR << "Error closing old connection for user " << verified_id << ": " << e.what();
                         }
 
                         // 关闭旧连接
@@ -256,15 +256,15 @@ void WebSocketServer::on_message(connection_hdl hdl, websocket_server::message_p
                         connection_users_.erase(old_connection_it->second);
                     }
                     // 认证通过，保存连接和用户ID映射
-                    user_connections_[user_id] = hdl;
-                    connection_users_[hdl] = user_id;
+                    user_connections_[verified_id] = hdl;
+                    connection_users_[hdl] = verified_id;
                 }
 
-                LOG_INFO << "WebSocket connection authenticated for user: " << user_id;
+                LOG_INFO << "WebSocket connection authenticated for user: " << verified_id;
                 json response = {
                     {"success", true},
                     {"message", "WebSocket authentication successful"},
-                    {"data", {{"user_id", user_id}, {"status", "connected"}}}};
+                    {"data", {{"verified_id", verified_id}, {"status", "connected"}}}};
                 server_.send(hdl, response.dump(), websocketpp::frame::opcode::text);
             }
             else

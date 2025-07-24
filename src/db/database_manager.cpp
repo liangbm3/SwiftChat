@@ -1,10 +1,7 @@
 #include "database_manager.hpp"
 
-DatabaseManager::DatabaseManager(const std::string &db_path)
+DatabaseManager::DatabaseManager(const std::string &db_path):db_conn_(std::make_unique<DatabaseConnection>(db_path))
 {
-    // 创建数据库连接
-    db_conn_ = std::make_unique<DatabaseConnection>(db_path);
-    
     if (db_conn_->isConnected())
     {
         // 创建各个仓库
