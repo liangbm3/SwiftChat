@@ -47,7 +47,7 @@ bool Epoller::modifyFd(int fd, uint32_t events)
 
 bool Epoller::removeFd(int fd)
 {
-    if(fd<0)
+    if (fd < 0)
     {
         return false;
     }
