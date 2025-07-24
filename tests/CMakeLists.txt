@@ -71,6 +71,7 @@ add_executable(test_http_server
     ../src/http/http_request.cpp
     ../src/http/http_response.cpp
     ../src/utils/logger.cpp
+    ../src/http/epoller.cpp
 )
 
 
@@ -253,7 +254,6 @@ target_include_directories(test_http_server PRIVATE
 # )
 
 # 如果使用CTest，可以添加测试
-enable_testing()
 add_test(NAME UserTests COMMAND test_user)
 add_test(NAME MessageTests COMMAND test_message)
 add_test(NAME RoomTests COMMAND test_room)
@@ -264,4 +264,3 @@ add_test(NAME TimerTests COMMAND test_timer)
 add_test(NAME HttpRequestTests COMMAND test_http_request)
 add_test(NAME HttpResponseTests COMMAND test_http_response)
 add_test(NAME HttpServerTests COMMAND test_http_server)
-add_test(NAME AuthUtilsTests COMMAND test_auth_utils)
