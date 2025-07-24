@@ -12,6 +12,7 @@
 
 #include <arpa/inet.h>
 #include <netinet/in.h>
+#include <netinet/tcp.h>
 #include <sys/socket.h>
 #include <sys/stat.h>
 
@@ -60,6 +61,15 @@ namespace http
             close(server_fd_);
             throw std::runtime_error("Failed to set socket options");
         }
+
+        // 性能优化：设置套接字缓冲区大小
+        int send_buffer = 65536;    // 64KB发送缓冲区
+        int recv_buffer = 65536;    // 64KB接收缓冲区
+        setsockopt(server_fd_, SOL_SOCKET, SO_SNDBUF, &send_buffer, sizeof(send_buffer));
+        setsockopt(server_fd_, SOL_SOCKET, SO_RCVBUF, &recv_buffer, sizeof(recv_buffer));
+
+        // 启用TCP_NODELAY，禁用Nagle算法以减少延迟
+        setsockopt(server_fd_, IPPROTO_TCP, TCP_NODELAY, &opt, sizeof(opt));
 
         // 绑定套接字到指定端口
         struct sockaddr_in server_addr;
@@ -161,8 +171,19 @@ namespace http
                             LOG_ERROR << "Failed to accept connection: " << strerror(errno);
                             break;
                         }
-                        LOG_INFO << "Accepted new connection from " << inet_ntoa(client_addr.sin_addr)
+                        
+                        // 优化：减少日志输出，避免DNS查找
+                        LOG_DEBUG << "Accepted new connection from " 
+                                 << ((client_addr.sin_addr.s_addr >> 0) & 0xFF) << "."
+                                 << ((client_addr.sin_addr.s_addr >> 8) & 0xFF) << "."
+                                 << ((client_addr.sin_addr.s_addr >> 16) & 0xFF) << "."
+                                 << ((client_addr.sin_addr.s_addr >> 24) & 0xFF)
                                  << ":" << ntohs(client_addr.sin_port);
+                        
+                        // 为客户端连接设置性能优化选项
+                        int opt = 1;
+                        setsockopt(client_fd, IPPROTO_TCP, TCP_NODELAY, &opt, sizeof(opt));
+                        
                         // 将新客户端设置为非阻塞，并添加到epoll中
                         setNoBlocking(client_fd);
                         epoller_.addFd(client_fd,
@@ -199,7 +220,6 @@ namespace http
 
     void HttpServer::stop()
     {
-        LOG_INFO << "Stopping HTTP server...";
         running_ = false;
         if (server_fd_ >= 0)
         {
@@ -211,7 +231,6 @@ namespace http
             close(server_fd_);
             server_fd_ = -1;
         }
-        LOG_INFO << "HTTP server stop() completed";
     }
 
     // 核心客户端处理逻辑
