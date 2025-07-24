@@ -51,7 +51,7 @@ bool Epoller::removeFd(int fd)
     {
         return false;
     }
-    struct epoll_event event={0};
+    struct epoll_event event = {0};
     return epoll_ctl(epoll_fd_, EPOLL_CTL_DEL, fd, &event) == 0;
 }
 
