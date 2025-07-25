@@ -112,7 +112,14 @@ http::HttpResponse MessageService::getMessages(const http::HttpRequest &request)
         
         // 将 Message 对象转换为 JSON
         json message_json_array = json::array();
-        std::transform(messages.begin(),messages.end(),std::back_inserter(message_json_array),[](const auto& message){return message.toJson();});
+        std::transform(
+            messages.begin(),
+            messages.end(),
+            std::back_inserter(message_json_array),
+            [](const auto &message) {
+                return message.toJson();
+            }
+        );
         
         json response_data = {
             {"success", true},
