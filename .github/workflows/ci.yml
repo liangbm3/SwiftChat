@@ -1,0 +1,181 @@
+name: CI Workflow
+description: This workflow builds the project, runs tests, performs static and dynamic analysis
+
+on:
+  push:
+    branches: [ main, develop ]
+  pull_request:
+    branches: [ main, develop ]
+
+jobs:
+  # ====================================================================
+  # 任务1: 编译项目并上传产物
+  # ====================================================================
+  build:
+    name: Build Project
+    runs-on: ubuntu-latest
+    
+    steps:
+    # 检出代码
+    - name: Checkout Repository
+      uses: actions/checkout@v4
+      with:
+        submodules: 'recursive'
+    
+    # 安装构建依赖
+    - name: Install Build Dependencies
+      run: |
+        sudo apt-get update
+        sudo apt-get install -y \
+          build-essential \
+          cmake \
+          libsqlite3-dev \
+          libssl-dev \
+          libgtest-dev \
+          libgmock-dev \
+          pkg-config \
+          libboost-all-dev
+    
+    # 配置和构建项目 (使用 Debug 类型并带 -g 标志，以便后续分析)
+    - name: Configure and Build
+      run: |
+        mkdir -p build
+        cd build
+        cmake .. -DCMAKE_BUILD_TYPE=Debug -DCMAKE_CXX_FLAGS="-g" -DCMAKE_C_FLAGS="-g"
+        make -j$(nproc)
+    
+    # 上传编译产物
+    - name: Upload Build Artifacts
+      uses: actions/upload-artifact@v4
+      with:
+        name: build-artifacts
+        path: build/
+
+  # ====================================================================
+  # 任务2: 运行单元测试和功能测试
+  # 依赖于 'build' 任务的成功
+  # ====================================================================
+  test:
+    name: Run Tests
+    runs-on: ubuntu-latest
+    needs: build # 依赖于 build 任务
+    
+    steps:
+    # 下载编译产物
+    - name: Download Build Artifacts
+      uses: actions/download-artifact@v4
+      with:
+        name: build-artifacts
+        path: build/
+
+    # 运行基本测试
+    - name: Run Basic Tests
+      run: |
+        cd build/tests
+        failed_tests=0
+        total_tests=0
+        for test in test_*; do
+          if [ -x "$test" ]; then
+            total_tests=$((total_tests + 1))
+            echo "Running $test..."
+            if timeout 30s ./"$test"; then
+              echo "✅ $test: PASSED"
+            else
+              echo "❌ $test: FAILED"
+              failed_tests=$((failed_tests + 1))
+            fi
+          fi
+        done
+        if [ $failed_tests -gt 0 ]; then
+          echo "❌ $failed_tests out of $total_tests tests failed!"
+          exit 1
+        else
+          echo "✅ All $total_tests tests passed!"
+        fi
+
+  # ====================================================================
+  # 任务3: 静态代码分析 (Cppcheck)
+  # 这个任务不依赖构建，可以和 build 并行运行
+  # ====================================================================
+  static-analysis:
+    name: Static Analysis (Cppcheck)
+    runs-on: ubuntu-latest
+    
+    steps:
+    - name: Checkout Repository
+      uses: actions/checkout@v4
+      with:
+        submodules: 'recursive'
+    
+    - name: Install Cppcheck
+      run: sudo apt-get update && sudo apt-get install -y cppcheck
+    
+    - name: Run Cppcheck
+      run: |
+        cppcheck --enable=all --std=c++17 --error-exitcode=1 \
+          --suppress=missingIncludeSystem --suppress=missingInclude \
+          --suppress=unusedFunction --inconclusive \
+          src/ 2> cppcheck_report.txt
+      continue-on-error: true
+
+    - name: Check and Upload Cppcheck Report
+      id: cppcheck
+      run: |
+        if grep -E "(error|warning)" cppcheck_report.txt; then
+          echo "Cppcheck found issues. See the report."
+          echo "CPPCHECK_EXIT_CODE=1" >> $GITHUB_ENV
+        else
+          echo "No critical Cppcheck issues found."
+          echo "CPPCHECK_EXIT_CODE=0" >> $GITHUB_ENV
+        fi
+
+    - name: Upload Report on Failure
+      if: env.CPPCHECK_EXIT_CODE == '1'
+      uses: actions/upload-artifact@v4
+      with:
+        name: cppcheck-report
+        path: cppcheck_report.txt
+
+    - name: Fail workflow on issues
+      if: env.CPPCHECK_EXIT_CODE == '1'
+      run: exit 1
+
+  # ====================================================================
+  # 任务4: 动态内存分析 (Valgrind)
+  # 依赖于 'build' 任务的成功
+  # ====================================================================
+  memory-check:
+    name: Memory Check (Valgrind)
+    runs-on: ubuntu-latest
+    needs: build # 依赖于 build 任务
+
+    steps:
+    - name: Install Valgrind
+      run: sudo apt-get update && sudo apt-get install -y valgrind
+
+    - name: Download Build Artifacts
+      uses: actions/download-artifact@v4
+      with:
+        name: build-artifacts
+        path: build/
+    
+    - name: Run Valgrind on Tests
+      run: |
+        cd build/tests
+        valgrind_failed=0
+        for test in test_*; do
+          if [ -x "$test" ]; then
+            echo "Running Valgrind on $test..."
+            valgrind --leak-check=full --error-exitcode=1 ./"$test"
+            if [ $? -ne 0 ]; then
+              echo "❌ Valgrind found issues in $test"
+              valgrind_failed=1
+            else
+              echo "✅ Valgrind check passed for $test"
+            fi
+          fi
+        done
+        if [ $valgrind_failed -ne 0 ]; then
+          echo "Valgrind detected memory issues."
+          exit 1
+        fi
