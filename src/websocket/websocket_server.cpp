@@ -264,7 +264,7 @@ void WebSocketServer::on_message(connection_hdl hdl, websocket_server::message_p
                 json response = {
                     {"success", true},
                     {"message", "WebSocket authentication successful"},
-                    {"data", {{"verified_id", verified_id}, {"status", "connected"}}}};
+                    {"data", {{"user_id", verified_id}, {"status", "connected"}}}};
                 server_.send(hdl, response.dump(), websocketpp::frame::opcode::text);
             }
             else
