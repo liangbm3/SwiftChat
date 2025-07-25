@@ -1,5 +1,5 @@
+# This workflow builds the project, runs tests, performs static and dynamic analysis
 name: CI Workflow
-description: This workflow builds the project, runs tests, performs static and dynamic analysis
 
 on:
   push:
