@@ -18,28 +18,16 @@
 
 #include "utils/logger.hpp"
 
+
 namespace http
 {
-    // 初始化静态MIME类型映射表
-    const std::unordered_map<std::string, std::string> HttpServer::MIME_TYPES = {
-        {"html", "text/html"},
-        {"css", "text/css"},
-        {"js", "application/javascript"},
-        {"json", "application/json"},
-        {"png", "image/png"},
-        {"jpg", "image/jpeg"},
-        {"jpeg", "image/jpeg"},
-        {"gif", "image/gif"},
-        {"svg", "image/svg+xml"},
-        {"ico", "image/x-icon"},
-        {"txt", "text/plain"}};
 
     HttpServer::HttpServer(int port, size_t thread_count)
         : port_(port),
           running_(false),
           thread_pool_(thread_count),
-          epoller_(),
-          static_dir_("./static")
+          epoller_(),//默认初始化
+          router_(std::make_unique<Router>())
     {
         // 忽略SIGPIPE信号，避免写入已关闭的套接字导致程序终止
         signal(SIGPIPE, SIG_IGN);
@@ -63,13 +51,22 @@ namespace http
         }
 
         // 性能优化：设置套接字缓冲区大小
-        int send_buffer = 65536;    // 64KB发送缓冲区
-        int recv_buffer = 65536;    // 64KB接收缓冲区
-        setsockopt(server_fd_, SOL_SOCKET, SO_SNDBUF, &send_buffer, sizeof(send_buffer));
-        setsockopt(server_fd_, SOL_SOCKET, SO_RCVBUF, &recv_buffer, sizeof(recv_buffer));
+        int send_buffer = 65536; // 64KB发送缓冲区
+        int recv_buffer = 65536; // 64KB接收缓冲区
+        if (setsockopt(server_fd_, SOL_SOCKET, SO_SNDBUF, &send_buffer, sizeof(send_buffer)) < 0)
+        {
+            LOG_WARN << "Failed to set send buffer size: " << strerror(errno);
+        }
+        if (setsockopt(server_fd_, SOL_SOCKET, SO_RCVBUF, &recv_buffer, sizeof(recv_buffer)) < 0)
+        {
+            LOG_WARN << "Failed to set receive buffer size: " << strerror(errno);
+        }
 
         // 启用TCP_NODELAY，禁用Nagle算法以减少延迟
-        setsockopt(server_fd_, IPPROTO_TCP, TCP_NODELAY, &opt, sizeof(opt));
+        if (setsockopt(server_fd_, IPPROTO_TCP, TCP_NODELAY, &opt, sizeof(opt)) < 0)
+        {
+            LOG_WARN << "Failed to set TCP_NODELAY: " << strerror(errno);
+        }
 
         // 绑定套接字到指定端口
         struct sockaddr_in server_addr;
@@ -109,21 +106,6 @@ namespace http
             close(server_fd_);
     }
 
-    void HttpServer::addHandler(const Route &route)
-    {
-        routes_.push_back(route);
-    }
-
-    void HttpServer::setMiddleware(Middleware middleware)
-    {
-        this->middleware_ = std::move(middleware);
-    }
-
-    void HttpServer::setStaticDirectory(const std::string &dir)
-    {
-        static_dir_ = dir;
-    }
-
     void HttpServer::run()
     {
         running_ = true;
@@ -152,9 +134,8 @@ namespace http
             {
                 int fd = epoller_.getEventFd(i);
                 uint32_t events = epoller_.getEvents(i);
-                if (fd == server_fd_)
+                if (fd == server_fd_) // 新连接到达
                 {
-                    // 新连接到达
                     // ET模式需要循环accept直到没有连接
                     while (true)
                     {
@@ -171,50 +152,47 @@ namespace http
                             LOG_ERROR << "Failed to accept connection: " << strerror(errno);
                             break;
                         }
-                        
-                        // 优化：减少日志输出，避免DNS查找
-                        LOG_DEBUG << "Accepted new connection from " 
-                                 << ((client_addr.sin_addr.s_addr >> 0) & 0xFF) << "."
-                                 << ((client_addr.sin_addr.s_addr >> 8) & 0xFF) << "."
-                                 << ((client_addr.sin_addr.s_addr >> 16) & 0xFF) << "."
-                                 << ((client_addr.sin_addr.s_addr >> 24) & 0xFF)
-                                 << ":" << ntohs(client_addr.sin_port);
-                        
-                        // 为客户端连接设置性能优化选项
-                        int opt = 1;
-                        setsockopt(client_fd, IPPROTO_TCP, TCP_NODELAY, &opt, sizeof(opt));
-                        
-                        // 将新客户端设置为非阻塞，并添加到epoll中
-                        setNoBlocking(client_fd);
-                        epoller_.addFd(client_fd,
-                                       EPOLLIN | EPOLLET | EPOLLRDHUP); // 监听读事件和连接关闭事件
+
+                        // 减少日志输出，避免DNS查找
+                        LOG_DEBUG << "Accepted new connection from "
+                                  << ((client_addr.sin_addr.s_addr >> 0) & 0xFF) << "."
+                                  << ((client_addr.sin_addr.s_addr >> 8) & 0xFF) << "."
+                                  << ((client_addr.sin_addr.s_addr >> 16) & 0xFF) << "."
+                                  << ((client_addr.sin_addr.s_addr >> 24) & 0xFF)
+                                  << ":" << ntohs(client_addr.sin_port);
+
+                        // 添加新连接（这会设置非阻塞、TCP_NODELAY和添加到epoll）
+                        addConnection(client_fd);
                     }
                 }
-                else
+                else // 已有连接的事件
                 {
-                    // 处理客户端套接字事件
+                    // 错误或连接关闭
                     if (events & (EPOLLRDHUP | EPOLLHUP | EPOLLERR))
                     {
-                        // 错误或连接关闭
-                        LOG_INFO << "Client fd " << fd << " closed or error";
-                        epoller_.removeFd(fd);
-                        close(fd);
+                        removeConnection(fd);//移除连接
                     }
-                    else if (events & EPOLLIN)
+                    else if (events & EPOLLIN)//有数据可读
                     {
-                        // 有数据可读，从epoller中移除并交给线程池处理
-                        epoller_.removeFd(fd);
-                        thread_pool_.enqueue([this, fd]()
-                                             { handleClient(fd); });
-                    }
-                    else
-                    {
-                        LOG_WARN << "Unhandled epoll event for fd " << fd << ": " << events;
+                        auto conn=getConnection(fd);
+                        if(conn)
+                        {
+                            // 从epoll中暂时移除，防止在处理时被其他线程重复触发
+                            epoller_.removeFd(fd);
+                            thread_pool_.enqueue([conn](){
+                                conn->handleEvent(); // 处理连接事件
+                            });
+                        }
+                        else
+                        {
+                            LOG_WARN << "Failed to get connection for fd " << fd;
+                            epoller_.removeFd(fd); // 移除无效连接
+                            close(fd); // 关闭套接字
+                        }
                     }
                 }
             }
         }
-        
         LOG_INFO << "HTTP server main loop exited";
     }
 
@@ -233,234 +211,64 @@ namespace http
         }
     }
 
-    // 核心客户端处理逻辑
-    void HttpServer::handleClient(int client_fd)
+    Router &HttpServer::getRouter()
     {
-        try
-        {
-            const size_t BUFFER_SIZE = 8192;
-            char buffer[BUFFER_SIZE];
-            std::string request_data;
-            // 非阻塞循环读取，直到缓冲区为空
-            while (true)
-            {
-                ssize_t bytes_received = recv(client_fd, buffer, BUFFER_SIZE - 1, 0);
-                if (bytes_received > 0)
-                {
-                    request_data.append(buffer, bytes_received);
-                }
-                else if (bytes_received == 0)
-                {
-                    LOG_INFO << "Client fd " << client_fd << " disconnected.";
-                    close(client_fd);
-                    return; // 客户端已关闭连接
-                }
-                else
-                {
-                    if (errno == EAGAIN || errno == EWOULDBLOCK)
-                    {
-                        // 没有更多数据可读，退出循环
-                        break;
-                    }
-                    LOG_ERROR << "recv error on fd " << client_fd << ": " << strerror(errno);
-                    close(client_fd);
-                    return; // 发生错误，关闭连接
-                }
-            }
-            if (request_data.empty())
-            {
-                LOG_WARN << "Received empty request from client fd " << client_fd;
-                close(client_fd);
-                return; // 没有数据，直接关闭连接
-            }
-
-            // [适配] 使用新的 HttpRequest API
-            auto request_opt = HttpRequest::parse(request_data);
-            HttpResponse response;
-
-            if (!request_opt)
-            {
-                // 解析失败，返回400 Bad Request
-                response = HttpResponse::BadRequest("Invalid HTTP request format.");
-            }
-            else
-            {
-                HttpRequest &request = *request_opt;
-                LOG_INFO << "Request: " << request.getMethod() << " " << request.getPath();
-
-                // 3. [优化] 应用中间件和路由
-                response = routeRequest(request);
-            }
-            // 添加CORS头和自定义响应头
-            response.withHeader("Access-Control-Allow-Origin", "*")
-                .withHeader("Access-Control-Allow-Methods", "GET, POST, PUT, DELETE, OPTIONS")
-                .withHeader("Access-Control-Allow-Headers",
-                            "Content-Type, Authorization, X-Requested-With")
-                .withHeader("X-Server", "SwiftChat/1.0");
-            // 4. 发送响应
-            std::string response_str = response.toString();
-            send(client_fd, response_str.c_str(), response_str.length(), 0);
-        }
-        catch (const std::exception &e)
-        {
-            LOG_ERROR << "Exception in handleClient: " << e.what();
-            // 确保即使有异常也尝试发送500错误
-            auto error_response = HttpResponse::InternalError().toString();
-            send(client_fd, error_response.c_str(), error_response.length(), 0);
-        }
-        close(client_fd);
+        return *router_;
     }
 
-    // [新增] 路由与中间件处理
-    HttpResponse HttpServer::routeRequest(const HttpRequest &request)
+    Epoller &HttpServer::getEpoller()
     {
-        // 处理所有 OPTIONS 请求（CORS 预检）
-        if (request.getMethod() == "OPTIONS")
-        {
-            LOG_INFO << "Handling CORS preflight request for: " << request.getPath();
-            return HttpResponse::Ok()
-                .withHeader("Access-Control-Allow-Origin", "*")
-                .withHeader("Access-Control-Allow-Methods", "GET, POST, PUT, DELETE, OPTIONS")
-                .withHeader("Access-Control-Allow-Headers",
-                            "Content-Type, Authorization, X-Requested-With")
-                .withHeader("Access-Control-Max-Age", "86400") // 缓存24小时
-                .withBody("", "text/plain");
-        }
-        // 遍历注册的所有路由
-        for (const auto &route : routes_)
-        {
-            // 检查请求方法是否匹配
-            if (route.method == request.getMethod())
-            {
-                std::unordered_map<std::string, std::string> pathParams;
-                // 检查路径是否匹配（支持路径参数）
-                if (matchPath(route.path, request.getPath(), pathParams))
-                {
-                    // 创建一个可修改的请求副本来设置路径参数
-                    HttpRequest modifiableRequest = request;
-                    modifiableRequest.setPathParams(pathParams);
-
-                    // 检查这个路由是否需要验证
-                    if (route.use_auth_middleware && middleware_)
-                    {
-                        // 使用中间件处理请求
-                        return middleware_(modifiableRequest, route.handler);
-                    }
-                    else
-                    {
-                        // 直接调用处理函数
-                        return route.handler(modifiableRequest);
-                    }
-                }
-            }
-        }
-        // 如果没有API路由匹配，尝试作为静态文件请求处理
-        if (request.getMethod() == "GET" && !static_dir_.empty())
-        {
-            return serveStaticFile(request.getPath());
-        }
-
-        // 如果没有匹配的路由和静态文件，返回404
-        return HttpResponse::NotFound("Endpoint not found");
+        return epoller_;
     }
 
-    // [优化] 返回HttpResponse对象，而不是修改引用
-    HttpResponse HttpServer::serveStaticFile(const std::string &path)
+    void HttpServer::addConnection(int fd)
     {
-        std::string safe_path = path;
-        // 基础安全检查：防止目录遍历攻击
-        if (safe_path.find("..") != std::string::npos)
+        // 把套接字fd设置为非阻塞模式，后续对fd的读写不会阻塞线程
+        setNoBlocking(fd);
+        int opt = 1;
+        // 关闭Nagle算法，启用TCP_NODELAY，让小包立即发送
+        if (setsockopt(fd, IPPROTO_TCP, TCP_NODELAY, &opt, sizeof(opt)) < 0)
         {
-            return HttpResponse::Forbidden("Path traversal not allowed.");
+            LOG_WARN << "Failed to set TCP_NODELAY for fd " << fd << ": " << strerror(errno);
         }
-
-        std::string full_path = static_dir_ + (path == "/" ? "/index.html" : path);
-
-        std::ifstream file(full_path, std::ios::binary);
-        if (!file)
+        std::shared_ptr<Connection> conn;
+        { // 进入互斥区
+            std::lock_guard<std::mutex> lock(connections_mutex_);
+            conn = std::make_shared<Connection>(fd, this, router_.get());
+            connections_[fd] = conn;
+        }
+        LOG_INFO << "New connection added for fd: " << fd;
+        if (!epoller_.addFd(fd, EPOLLIN | EPOLLET | EPOLLRDHUP))
         {
-            return HttpResponse::NotFound("Static file not found.");
+            LOG_ERROR << "Failed to add fd " << fd << " to epoll";
+            // 如果添加到epoll失败，需要从连接映射中移除
+            std::lock_guard<std::mutex> lock(connections_mutex_);
+            connections_.erase(fd);
         }
-
-        std::stringstream buffer;
-        buffer << file.rdbuf();
-        std::string content = buffer.str();
-
-        auto ext_pos = full_path.find_last_of('.');
-        std::string mime_type = "application/octet-stream"; // 默认
-        if (ext_pos != std::string::npos)
-        {
-            std::string ext = full_path.substr(ext_pos + 1);
-            auto it = MIME_TYPES.find(ext);
-            if (it != MIME_TYPES.end())
-            {
-                mime_type = it->second;
-            }
-        }
-
-        // 使用流式接口构建响应
-        return HttpResponse::Ok()
-            .withBody(content, mime_type)
-            .withHeader("Cache-Control", "public, max-age=3600");
     }
 
-    // 路径参数匹配和提取实现
-    bool HttpServer::matchPath(const std::string &pattern,
-                               const std::string &path,
-                               std::unordered_map<std::string, std::string> &params)
+    void HttpServer::removeConnection(int fd)
     {
-        params.clear();
-
-        // 分割模式和路径
-        auto splitPath = [](const std::string &str) -> std::vector<std::string>
+        std::lock_guard<std::mutex> lock(connections_mutex_);
+        if (connections_.count(fd))
         {
-            std::vector<std::string> segments;
-            std::stringstream ss(str);
-            std::string segment;
-            while (std::getline(ss, segment, '/'))
-            {
-                if (!segment.empty())
-                {
-                    segments.push_back(segment);
-                }
-            }
-            return segments;
-        };
-
-        auto patternSegments = splitPath(pattern);
-        auto pathSegments = splitPath(path);
-
-        // 段数必须相同
-        if (patternSegments.size() != pathSegments.size())
-        {
-            return false;
+            LOG_INFO << "Connection removed for fd: " << fd;
+            epoller_.removeFd(fd);
+            connections_.erase(fd); 
+            // Connection对象会在shared_ptr引用计数变为0时自动析构，析构函数会close(fd);
         }
-
-        // 逐段匹配
-        for (size_t i = 0; i < patternSegments.size(); ++i)
-        {
-            const std::string &patternSeg = patternSegments[i];
-            const std::string &pathSeg = pathSegments[i];
-
-            // 检查是否为参数段（以{开头并以}结尾）
-            if (patternSeg.length() > 2 && patternSeg.front() == '{' && patternSeg.back() == '}')
-            {
-                // 提取参数名（去掉{}）
-                std::string paramName = patternSeg.substr(1, patternSeg.length() - 2);
-                params[paramName] = pathSeg;
-            }
-            else
-            {
-                // 精确匹配
-                if (patternSeg != pathSeg)
-                {
-                    return false;
-                }
-            }
-        }
-
-        return true;
     }
+
+    std::shared_ptr<Connection> HttpServer::getConnection(int fd)
+    {
+        std::lock_guard<std::mutex> lock(connections_mutex_);
+        if (connections_.count(fd))
+        {
+            return connections_[fd];
+        }
+        return nullptr;
+    }
+
     void HttpServer::setNoBlocking(int fd)
     {
         int flags = fcntl(fd, F_GETFL, 0);
