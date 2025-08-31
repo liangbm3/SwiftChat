@@ -16,8 +16,9 @@ set(CMAKE_CXX_FLAGS_DEBUG "${CMAKE_CXX_FLAGS_DEBUG} -g -O0")
 
 # 查找并链接线程库
 find_package(Threads REQUIRED)
-# 查找并链接SQLite3数据库库
-find_package(SQLite3 REQUIRED)
+# 查找并链接MySQL数据库库
+find_package(PkgConfig REQUIRED)
+pkg_check_modules(MYSQL REQUIRED mysqlclient)
 # 查找并链接OpenSSL库（用于JWT签名）
 find_package(OpenSSL REQUIRED)
 
@@ -32,7 +33,7 @@ include_directories(
     ${CMAKE_SOURCE_DIR}/third_party/websocketpp # websocketpp头文件目录
     ${CMAKE_SOURCE_DIR}/third_party/nlohmann/single_include # nlohmann/json头文件目录
     ${CMAKE_SOURCE_DIR}/third_party/Bcrypt/include # Bcrypt头文件目录
-    ${SQLite3_INCLUDE_DIRS}        # SQLite3头文件目录
+    ${MYSQL_INCLUDE_DIRS}          # MySQL头文件目录
     ${OPENSSL_INCLUDE_DIR}         # OpenSSL头文件目录
 )
 
