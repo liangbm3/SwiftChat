@@ -60,8 +60,6 @@ void Connection::handleEvent() {
     }
   }
   if (state_ == State::CLOSING) {
-    // 通知服务器移除自身
-    server_->removeConnection(fd_);
     return;
   }
 
@@ -127,7 +125,119 @@ void Connection::processHttpData() {
 }
 
 void Connection::processWebSocketData() {
-  // 处理WebSocket数据帧
+  // 循环，直到缓冲区的数据不足以解析一个完整的帧
+  while(true){
+    if(read_buffer_.size() < 2){
+      // 至少需要2 字节的头部
+      break;
+    }
+    
+    // 解析帧头部
+    // 第一个字节 FIN，RSV，Opcode
+    const uint8_t byte1 = static_cast<uint8_t>(read_buffer_[0]);
+    const uint8_t opcode = byte1 & 0x0F; //取后四位
+    const bool fin = (byte1 & 0x80) != 0; // 检查FIN位
+    
+    //第二个字节：MASK，RSV，Opcode
+    const uint8_t byte2 = static_cast<uint8_t>(read_buffer_[1]);
+    const bool has_mask = (byte2 & 0x80) != 0;  // 检查第一个位是否为1
+    uint64_t payload_length = byte2 & 0x7F;    // 取后7位
+
+    size_t header_len = 2;
+
+    //解析负载长度
+    if(payload_length==126){
+      if(read_buffer_.size()<4) break; // 扩展长度数据不完整，等待更多数据
+      payload_length=(static_cast<uint8_t>(read_buffer_[2])<<8) |
+                     static_cast<uint8_t>(read_buffer_[3]);
+      header_len+=2;
+    }else if(payload_length==127){
+      if(read_buffer_.size()<10) break; // 扩展长度数据不完整，等待更多数据
+      payload_length=0;
+      for(int i=0;i<8;++i){
+        payload_length=(payload_length<<8) | static_cast<uint8_t>(read_buffer_[2+i]);
+      }
+      header_len+=8;
+    }
+
+    // 检查负载长度是否合理（防止过大的帧攻击）
+    const size_t MAX_FRAME_SIZE = 1024 * 1024; // 1MB
+    if(payload_length > MAX_FRAME_SIZE) {
+      LOG_WARN << "WebSocket frame too large (" << payload_length << " bytes), closing connection";
+      state_ = State::CLOSING;
+      break;
+    }
+
+    // 检查掩码和负载数据是否完整
+    const size_t masking_key_len = has_mask ? 4 : 0;
+    const size_t total_frame_size = header_len + masking_key_len + payload_length;
+    if(read_buffer_.size() < total_frame_size){
+      // 数据不完整，等待更多数据
+      break;
+    }
+
+    //提取掩码和负载
+    std::string masking_key;
+    if(has_mask){
+      masking_key = read_buffer_.substr(header_len, masking_key_len);
+    }
+
+    std::string payload = read_buffer_.substr(header_len + masking_key_len, payload_length);
+
+    //解码负载
+    if(has_mask){
+      for(size_t i=0;i<payload.length();++i){
+        payload[i] ^= masking_key[i%4];
+      }
+    }
+
+    // 根据Opcode处理帧
+    bool frame_processed = true;
+    switch (opcode)
+    {
+    case 0x0:  // 连续帧
+      LOG_DEBUG << "WebSocket (fd: " << fd_ << ") received continuation frame";
+      // TODO: 实现分片消息处理
+      break;
+    case 0x1:  // 文本帧
+      LOG_INFO << "WebSocket (fd: " << fd_ << ") received text frame: " << payload;
+      sendWebSocketFrame(payload);
+      break;
+    case 0x2:  // 二进制帧
+      LOG_INFO << "WebSocket (fd: " << fd_ << ") received binary frame";
+      // 发送不支持的帧类型错误，而不是直接关闭连接
+      sendWebSocketFrame("Binary frames not supported", 0x1);
+      break;
+    case 0x8:  // 关闭帧
+      LOG_INFO << "WebSocket (fd: " << fd_ << ") received close frame";
+      // 响应关闭帧并关闭连接
+      sendWebSocketFrame("", 0x8);
+      state_ = State::CLOSING;
+      frame_processed = false; // 不继续处理更多帧
+      break;
+    case 0x9:  // Ping 帧
+      LOG_DEBUG << "WebSocket (fd: " << fd_ << ") received ping frame";
+      // 响应 Pong 帧
+      sendWebSocketFrame(payload, 0xA);
+      break;
+    case 0xA:  // Pong 帧
+      LOG_DEBUG << "WebSocket (fd: " << fd_ << ") received pong frame";
+      // Pong帧通常用于心跳响应，这里只记录日志
+      break;
+    default:
+      LOG_WARN << "WebSocket (fd: " << fd_ << ") received unknown opcode: " << static_cast<int>(opcode);
+      // 对于未知帧类型，记录警告但不关闭连接
+      break;
+    }
+
+    // 从缓冲区中移除已处理的帧数据
+    read_buffer_.erase(0, total_frame_size);
+
+    // 如果收到关闭帧，停止处理更多帧
+    if (!frame_processed) {
+      break;
+    }
+  }
 }
 
 // 发送响应的辅助方法，处理部分发送的情况
@@ -234,4 +344,42 @@ std::string Connection::generateWebSocketAcceptKey(
 
   // Base64 编码
   return base64_encode(sha1_hash);
+}
+
+void Connection::closeConnection(){
+  if(state_==State::CLOSING) return; //已经在关闭状态
+  LOG_DEBUG << "Closing connection for fd " << fd_;
+  state_ = State::CLOSING;
+  // 关闭套接字等清理工作
+  server_->removeConnection(fd_);
+}
+
+
+void Connection::sendWebSocketFrame(const std::string &message, uint8_t opcode) {
+    std::string frame;
+    frame += static_cast<char>(0x80 | opcode); // FIN=1, RSV=0
+
+    const size_t payload_len = message.length();
+    if (payload_len <= 125) {
+        frame += static_cast<char>(payload_len);
+    } else if (payload_len <= 65535) {
+        frame += static_cast<char>(126);
+        frame += static_cast<char>((payload_len >> 8) & 0xFF);
+        frame += static_cast<char>(payload_len & 0xFF);
+    } else {
+        frame += static_cast<char>(127);
+        for (int i=7; i>=0; --i) {
+            frame += static_cast<char>((payload_len >> (i*8)) & 0xFF);
+        }
+    }
+
+    frame += message;
+
+    // 使用你已经实现的sendResponse来发送帧数据
+    if (!sendResponse(frame)) {
+        LOG_ERROR << "Failed to send WebSocket frame to fd " << fd_;
+        state_ = State::CLOSING;
+    } else {
+        LOG_INFO << "WebSocket (fd " << fd_ << ") sent: " << message;
+    }
 }

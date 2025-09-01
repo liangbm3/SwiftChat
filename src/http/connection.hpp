@@ -39,6 +39,7 @@ class Connection : public std::enable_shared_from_this<Connection> {
   bool handleWebSocketHandshake(int client_fd,
                                 const http::HttpRequest &request);
   std::string generateWebSocketAcceptKey(const std::string &websocket_key);
+  void sendWebSocketFrame(const std::string& message,uint8_t opcode = 0x1); // opcode 0x1表示文本帧
 
   // 成员变量
   int fd_;
