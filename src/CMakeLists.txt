@@ -9,23 +9,20 @@ add_executable(SwiftChat
     http/http_server.cpp
     http/http_request.cpp
     http/http_response.cpp
+    http/router.cpp
+    http/connection.cpp
     http/epoller.cpp
     utils/logger.cpp
     utils/thread_pool.cpp
     utils/timer.cpp
     utils/jwt_utils.cpp
-    service/auth_service.cpp
-    service/room_service.cpp
-    service/message_service.cpp
-    service/user_service.cpp
-    service/server_service.cpp
-    middleware/auth_middleware.cpp
-    websocket/websocket_server.cpp
     db/database_manager.cpp
     db/database_connection.cpp
-    db/user_repository.cpp
-    db/room_repository.cpp
-    db/message_repository.cpp
+    db/connection_pool.cpp
+    db/mysql_statement.cpp
+    db/respository/user_repository.cpp
+    db/respository/room_repository.cpp
+    db/respository/message_repository.cpp
 )
 
 # 设置包含目录
@@ -40,7 +37,7 @@ target_include_directories(SwiftChat PRIVATE
 target_link_libraries(SwiftChat
     ${CMAKE_THREAD_LIBS_INIT}
     ${OPENSSL_LIBRARIES}
-    sqlite3
+    ${MYSQL_LIBRARIES}
 )
 
 # 设置可执行文件的输出目录
