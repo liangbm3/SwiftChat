@@ -277,12 +277,12 @@ std::optional<User> UserRepository::getUser(const std::string &username) const {
 
   if (stmt.executeQuery() && stmt.fetch() == MySQLStatement::FetchStatus::SUCCESS) {
     int64_t id = stmt.getLong(0);
-    std::string username = stmt.getString(1);
+    std::string user_name = stmt.getString(1);
     std::string password_hash = stmt.getString(2);
     int status = stmt.getInt(3);
     std::string last_seen = stmt.getString(4);
 
-    return User(id, username, password_hash, status, last_seen);
+    return User(id, user_name, password_hash, status, last_seen);
   }
 
   LOG_ERROR << "Failed to find user with username: " << username;

@@ -93,7 +93,7 @@ void Connection::processHttpData() {
   }
 
   read_buffer_.clear();  // 清空读取缓冲区，准备处理下一个请求
-  http::HttpRequest &request = *request_opt;
+  const http::HttpRequest &request = *request_opt;
 
   // 检查websocket升级
   if (isWebSocketUpgradeRequest(request)) {

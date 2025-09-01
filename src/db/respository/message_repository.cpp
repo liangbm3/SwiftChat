@@ -127,7 +127,7 @@ std::vector<Message> MessageRepository::getRoomMessages(int64_t room_id, int lim
 }
 
 std::vector<Message> MessageRepository::getRoomMessagesAfter(int64_t room_id, 
-                                                            const std::string &timestamp) const {
+                                                            const std::string &created_at) const {
   std::vector<Message> messages;
   auto connection = pool_.getConnection();
   if (!connection) {
@@ -144,7 +144,7 @@ std::vector<Message> MessageRepository::getRoomMessagesAfter(int64_t room_id,
   
   MySQLStatement stmt(connection->getRawConnection(), sql);
 
-  if (!stmt.bindLong(0, room_id) || !stmt.bindString(1, timestamp)) {
+  if (!stmt.bindLong(0, room_id) || !stmt.bindString(1, created_at)) {
     LOG_ERROR << "Failed to bind parameters for getRoomMessagesAfter";
     return messages;
   }
@@ -352,7 +352,7 @@ std::vector<DirectMessage> MessageRepository::getDirectMessages(int64_t user1_id
 }
 
 std::vector<DirectMessage> MessageRepository::getDirectMessagesAfter(int64_t user1_id, int64_t user2_id,
-                                                                     const std::string &timestamp) const {
+                                                                     const std::string &created_at) const {
   std::vector<DirectMessage> messages;
   auto connection = pool_.getConnection();
   if (!connection) {
@@ -371,7 +371,7 @@ std::vector<DirectMessage> MessageRepository::getDirectMessagesAfter(int64_t use
 
   if (!stmt.bindLong(0, user1_id) || !stmt.bindLong(1, user2_id) || 
       !stmt.bindLong(2, user2_id) || !stmt.bindLong(3, user1_id) ||
-      !stmt.bindString(4, timestamp)) {
+      !stmt.bindString(4, created_at)) {
     LOG_ERROR << "Failed to bind parameters for getDirectMessagesAfter";
     return messages;
   }

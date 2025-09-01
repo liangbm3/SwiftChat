@@ -5,7 +5,7 @@
 namespace db {
 
 DatabaseConnection::DatabaseConnection(const MySQLConfig &config)
-    : config_(config), mysql_(nullptr), is_connected_(false) {
+    : mysql_(nullptr), config_(config), is_connected_(false) {
   // 初始化MySQL
   mysql_ = mysql_init(nullptr);
   if (!mysql_) {

@@ -224,7 +224,7 @@ MySQLStatement::FetchStatus MySQLStatement::fetch() {
   }
 }
 
-bool MySQLStatement::isNull(int index) {
+bool MySQLStatement::isNull(int index) const {
   if (index >= result_nulls_.size()) return true;
   return result_nulls_[index];
 }

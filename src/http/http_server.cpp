@@ -22,9 +22,10 @@ namespace http {
 
 HttpServer::HttpServer(int port, size_t thread_count)
     : port_(port),
+      server_fd_(-1),
       running_(false),
-      thread_pool_(thread_count),
       epoller_(),  //默认初始化
+      thread_pool_(thread_count),
       router_(std::make_unique<Router>()) {
   // 忽略SIGPIPE信号，避免写入已关闭的套接字导致程序终止
   signal(SIGPIPE, SIG_IGN);

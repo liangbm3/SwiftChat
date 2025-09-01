@@ -47,7 +47,7 @@ class MySQLStatement {
   std::string getString(int index);
   int getInt(int index);
   long long getLong(int index);
-  bool isNull(int index);
+  bool isNull(int index) const;
 
   // 获取影响的行数
   my_ulonglong getAffectedRows();
