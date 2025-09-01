@@ -5,7 +5,7 @@
 #include <string>
 #include <vector>
 
-#include "../../model/user.hpp"
+#include "model/user.hpp"
 #include "../connection_pool.hpp"
 #include "../mysql_statement.hpp"
 

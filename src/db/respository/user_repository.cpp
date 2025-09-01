@@ -4,7 +4,6 @@
 #include <iomanip>
 #include <sstream>
 
-#include "../mysql_statement.hpp"
 
 namespace db {
 UserRepository::UserRepository(ConnectionPool &pool) : pool_(pool) {}

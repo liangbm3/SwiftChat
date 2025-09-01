@@ -7,7 +7,7 @@
 #include <variant>
 #include <vector>
 
-#include "../utils/logger.hpp"
+#include "utils/logger.hpp"
 
 namespace db {
 

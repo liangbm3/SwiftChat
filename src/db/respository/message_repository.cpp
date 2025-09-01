@@ -1,7 +1,5 @@
 #include "message_repository.hpp"
-
-#include "../mysql_statement.hpp"
-#include "../../utils/logger.hpp"
+#include "utils/logger.hpp"
 
 namespace db {
 

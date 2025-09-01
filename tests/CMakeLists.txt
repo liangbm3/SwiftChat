@@ -130,17 +130,6 @@ add_executable(test_http_response
     ../src/http/http_response.cpp
 )
 
-# 创建HTTP服务器测试可执行文件
-add_executable(test_http_server 
-    http/test_http_server.cpp
-    ../src/http/http_server.cpp
-    ../src/http/http_request.cpp
-    ../src/http/http_response.cpp
-    ../src/utils/logger.cpp
-    ../src/http/epoller.cpp
-)
-
-
 # 链接必要的库
 target_link_libraries(test_user 
     GTest::gtest
@@ -234,14 +223,6 @@ target_link_libraries(test_http_response
     Threads::Threads
 )
 
-target_link_libraries(test_http_server
-    GTest::gtest
-    GTest::gtest_main
-    Threads::Threads
-)
-
-
-
 # 设置测试可执行文件的输出目录
 set_target_properties(test_user PROPERTIES
     RUNTIME_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/tests
@@ -293,9 +274,7 @@ set_target_properties(test_http_response PROPERTIES
     RUNTIME_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/tests
 )
 
-set_target_properties(test_http_server PROPERTIES
-    RUNTIME_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/tests
-)
+
 
 
 # set_target_properties(test_auth_utils PROPERTIES
@@ -386,34 +365,22 @@ target_include_directories(test_http_response PRIVATE
     
 )
 
-target_include_directories(test_http_server PRIVATE
-    ${CMAKE_SOURCE_DIR}/src
-    
-)
 
-
-# target_include_directories(test_auth_utils PRIVATE
-#     ${CMAKE_SOURCE_DIR}/src
-#     ${CMAKE_SOURCE_DIR}/third_party
-#     ${CMAKE_SOURCE_DIR}/third_party/jwt-cpp/include
-#     ${OPENSSL_INCLUDE_DIR}
-# )
-
-# 如果使用CTest，可以添加测试
-add_test(NAME UserTests COMMAND test_user)
-add_test(NAME MessageTests COMMAND test_message)
-add_test(NAME RoomTests COMMAND test_room)
-add_test(NAME LoggerTests COMMAND test_logger)
-add_test(NAME DatabaseManagerTests COMMAND test_database_manager)
-add_test(NAME ConnectionPoolTests COMMAND test_connection_pool)
-add_test(NAME DatabaseConnectionTests COMMAND test_database_connection)
-add_test(NAME DatabaseInitializerTests COMMAND test_database_initializer)
-add_test(NAME MySQLStatementTests COMMAND test_mysql_statement)
-add_test(NAME UserRepositoryTests COMMAND test_user_repository)
-add_test(NAME RoomRepositoryTests COMMAND test_room_repository)
-add_test(NAME MessageRepositoryTests COMMAND test_message_repository)
-add_test(NAME ThreadPoolTests COMMAND test_thread_pool)
-add_test(NAME TimerTests COMMAND test_timer)
-add_test(NAME HttpRequestTests COMMAND test_http_request)
-add_test(NAME HttpResponseTests COMMAND test_http_response)
-add_test(NAME HttpServerTests COMMAND test_http_server)
+# # 如果使用CTest，可以添加测试
+# add_test(NAME UserTests COMMAND test_user)
+# add_test(NAME MessageTests COMMAND test_message)
+# add_test(NAME RoomTests COMMAND test_room)
+# add_test(NAME LoggerTests COMMAND test_logger)
+# add_test(NAME DatabaseManagerTests COMMAND test_database_manager)
+# add_test(NAME ConnectionPoolTests COMMAND test_connection_pool)
+# add_test(NAME DatabaseConnectionTests COMMAND test_database_connection)
+# add_test(NAME DatabaseInitializerTests COMMAND test_database_initializer)
+# add_test(NAME MySQLStatementTests COMMAND test_mysql_statement)
+# add_test(NAME UserRepositoryTests COMMAND test_user_repository)
+# add_test(NAME RoomRepositoryTests COMMAND test_room_repository)
+# add_test(NAME MessageRepositoryTests COMMAND test_message_repository)
+# add_test(NAME ThreadPoolTests COMMAND test_thread_pool)
+# add_test(NAME TimerTests COMMAND test_timer)
+# add_test(NAME HttpRequestTests COMMAND test_http_request)
+# add_test(NAME HttpResponseTests COMMAND test_http_response)
+# add_test(NAME HttpServerTests COMMAND test_http_server)

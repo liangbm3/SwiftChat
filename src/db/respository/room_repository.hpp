@@ -5,8 +5,8 @@
 #include <string>
 #include <vector>
 
-#include "../../model/room.hpp"
-#include "../../model/user.hpp"
+#include "model/room.hpp"
+#include "model/user.hpp"
 #include "../connection_pool.hpp"
 #include "../mysql_statement.hpp"
 

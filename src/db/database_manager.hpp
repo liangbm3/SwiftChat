@@ -7,15 +7,16 @@
 #include <vector>
 #include <unordered_map>
 
-#include "../model/message.hpp"
-#include "../model/direct_message.hpp"
-#include "../model/room.hpp"
-#include "../model/user.hpp"
+#include <nlohmann/json.hpp>
+#include "model/message.hpp"
+#include "model/direct_message.hpp"
+#include "model/room.hpp"
+#include "model/user.hpp"
 #include "connection_pool.hpp"
 #include "respository/message_repository.hpp"
 #include "respository/room_repository.hpp"
 #include "respository/user_repository.hpp"
-#include "../../third_party/nlohmann/single_include/nlohmann/json.hpp"
+
 
 class DatabaseManager {
  public:

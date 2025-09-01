@@ -5,8 +5,8 @@
 #include <string>
 #include <vector>
 
-#include "../../model/message.hpp"
-#include "../../model/direct_message.hpp"
+#include "model/message.hpp"
+#include "model/direct_message.hpp"
 #include "../connection_pool.hpp"
 #include "../mysql_statement.hpp"
 
