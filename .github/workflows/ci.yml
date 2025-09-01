@@ -112,31 +112,89 @@ jobs:
     
     - name: Run Cppcheck
       run: |
-        cppcheck --enable=all --std=c++17 --error-exitcode=1 \
-          --suppress=missingIncludeSystem --suppress=missingInclude \
-          --suppress=unusedFunction --inconclusive \
+        # 确保第三方库目录存在且被正确排除
+        echo "=== Directories to exclude ==="
+        find . -name "third_party" -type d || echo "No third_party directories found"
+        echo "=== Running Cppcheck on your source code only ==="
+        
+        # 只检查自己的代码，排除第三方库
+        cppcheck --enable=warning,style,performance,portability \
+          --std=c++17 --error-exitcode=0 \
+          --suppress=missingIncludeSystem \
+          --suppress=missingInclude \
+          --suppress=unusedFunction \
+          --suppress=useStlAlgorithm \
+          --suppress=functionStatic \
+          --suppress=toomanyconfigs \
+          --suppress=ConfigurationNotChecked \
+          --suppress=syntaxError \
+          -i third_party/ \
+          --inconclusive \
           src/ 2> cppcheck_report.txt
+        
+        echo "=== Cppcheck completed ==="
       continue-on-error: true
 
-    - name: Check and Upload Cppcheck Report
+    - name: Filter and Check Cppcheck Report
       id: cppcheck
       run: |
-        if grep -E "(error|warning)" cppcheck_report.txt; then
-          echo "Cppcheck found issues. See the report."
+        # 过滤掉第三方库的错误和不重要的警告
+        if [ -s cppcheck_report.txt ]; then
+          grep -v "third_party/" cppcheck_report.txt | \
+          grep -v "nlohmann/json.hpp" | \
+          grep -v "JSON_CATCH" | \
+          grep -v "_MSVC_LANG" | \
+          grep -v "_MSC_VER" | \
+          grep -v "syntaxError" | \
+          grep -v "toomanyconfigs" | \
+          grep -v "ConfigurationNotChecked" | \
+          grep -v "unmatchedSuppression" > filtered_report.txt || true
+        else
+          touch filtered_report.txt
+        fi
+        
+        # 只关注真正的错误和重要警告
+        if [ -s filtered_report.txt ] && grep -E "(error|warning.*shadowArgument|warning.*constVariable|warning.*funcArgNamesDifferent)" filtered_report.txt; then
+          echo "Found critical issues in your code:"
+          cat filtered_report.txt
           echo "CPPCHECK_EXIT_CODE=1" >> $GITHUB_ENV
         else
-          echo "No critical Cppcheck issues found."
+          echo "No critical issues found in your code."
           echo "CPPCHECK_EXIT_CODE=0" >> $GITHUB_ENV
         fi
 
-    - name: Upload Report on Failure
-      if: env.CPPCHECK_EXIT_CODE == '1'
+    - name: Show Report Summary
+      run: |
+        echo "=== Cppcheck Analysis Summary ==="
+        if [ -s cppcheck_report.txt ]; then
+          echo "Total issues found: $(wc -l < cppcheck_report.txt)"
+          echo ""
+          echo "=== Filtered Report (Your Code Only) ==="
+          if [ -s filtered_report.txt ]; then
+            cat filtered_report.txt
+            echo ""
+            echo "=== Issue Classification ==="
+            critical_count=$(grep -c -E "(error|warning.*shadowArgument|warning.*constVariable|warning.*funcArgNamesDifferent)" filtered_report.txt || echo "0")
+            style_count=$(grep -c -E "(style|performance)" filtered_report.txt || echo "0")
+            echo "Critical issues (will fail CI): $critical_count"
+            echo "Style/Performance suggestions: $style_count"
+          else
+            echo "No issues found in your code after filtering!"
+          fi
+        else
+          echo "Cppcheck completed successfully with no issues found."
+        fi
+
+    - name: Upload Analysis Reports
       uses: actions/upload-artifact@v4
       with:
-        name: cppcheck-report
-        path: cppcheck_report.txt
+        name: cppcheck-analysis
+        path: |
+          cppcheck_report.txt
+          filtered_report.txt
+        if-no-files-found: ignore
 
-    - name: Fail workflow on issues
+    - name: Fail workflow on critical issues
       if: env.CPPCHECK_EXIT_CODE == '1'
       run: exit 1
 

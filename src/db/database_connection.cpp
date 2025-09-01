@@ -1,141 +1,79 @@
 #include "database_connection.hpp"
+
 #include <chrono>
 
-DatabaseConnection::DatabaseConnection(const std::string &db_path) : db_path_(db_path), db_(nullptr)
-{
-    {
-        //进入临界区，加锁
-        std::lock_guard<std::recursive_mutex> lock(mutex_);
-        if (sqlite3_open(db_path.c_str(), &db_) != SQLITE_OK)//尝试打开数据库
-        {
-            LOG_ERROR << "Can't open database: " << sqlite3_errmsg(db_);
-            return;
-        }
-        LOG_INFO << "Opened database successfully";
-        
-        // 启用外键约束
-        if (!enableForeignKeys())
-        {
-            LOG_ERROR << "Failed to enable foreign key constraints";
-            sqlite3_close(db_);
-            db_ = nullptr;
-            return;
-        }
-        LOG_INFO << "Foreign key constraints enabled";
-    }
-    
-    //如果连接成功则初始化表
-    if (initializeTables())
-    {
-        LOG_INFO << "Initialized tables successfully";
-    }
-    else
-    {
-        LOG_ERROR << "Failed to initialize tables";
-        sqlite3_close(db_);
-        db_ = nullptr;
-        return;
-    }
+namespace db {
+
+DatabaseConnection::DatabaseConnection(const MySQLConfig &config)
+    : mysql_(nullptr), config_(config), is_connected_(false) {
+  // 初始化MySQL
+  mysql_ = mysql_init(nullptr);
+  if (!mysql_) {
+    LOG_ERROR << "Failed to initialize MySQL";
+    return;
+  }
 }
 
-DatabaseConnection::~DatabaseConnection()
-{
-    std::lock_guard<std::recursive_mutex> lock(mutex_);
-    if (db_)
-    {
-        LOG_INFO << "Closing database connection";
-        sqlite3_close(db_);
-    }
+DatabaseConnection::~DatabaseConnection() {
+  disconnect();
+  if (mysql_) {
+    LOG_INFO << "Closing MySQL connection";
+    mysql_close(mysql_);
+  }
 }
 
-bool DatabaseConnection::executeQuery(const std::string &query)
-{
-    std::lock_guard<std::recursive_mutex> lock(mutex_);
-    char *err_msg = nullptr;
-    int rc = sqlite3_exec(db_, query.c_str(), nullptr, nullptr, &err_msg);
-    if (rc != SQLITE_OK)
-    {
-        LOG_ERROR << "SQL error: " << err_msg;
-        sqlite3_free(err_msg);
-        return false;
-    }
+bool DatabaseConnection::connect() {
+  if (is_connected_) {
     return true;
+  }
+  if (!mysql_) {
+    LOG_ERROR << "MySQL connection is null";
+    return false;
+  }
+
+  // 设置字符集
+  if (mysql_options(mysql_, MYSQL_SET_CHARSET_NAME, "utf8mb4")) {
+    LOG_ERROR << "Failed to set charset option: " << mysql_error(mysql_);
+    return false;
+  }
+
+  // 设置自动重连选项
+  bool reconnect_flag = 1;
+  if (mysql_options(mysql_, MYSQL_OPT_RECONNECT, &reconnect_flag)) {
+    LOG_ERROR << "Failed to set reconnect option: " << mysql_error(mysql_);
+    return false;
+  }
+
+  // 连接到MySQL服务器
+  if (!mysql_real_connect(mysql_, config_.host.c_str(),
+                          config_.username.c_str(), config_.password.c_str(),
+                          config_.database.c_str(), config_.port, nullptr, 0)) {
+    LOG_ERROR << "Can't connect to MySQL server: " << mysql_error(mysql_);
+    return false;
+  }
+  
+  // 设置自动提交
+  if (mysql_autocommit(mysql_, 1)) {
+    LOG_ERROR << "Failed to set autocommit: " << mysql_error(mysql_);
+    return false;
+  }
+  
+  LOG_INFO << "Connected to MySQL server successfully with utf8mb4 charset";
+  is_connected_ = true;
+  return true;
 }
 
-bool DatabaseConnection::enableForeignKeys()
-{
-    const char* enable_fk_query = "PRAGMA foreign_keys = ON;";
-    return executeQuery(enable_fk_query);
+void DatabaseConnection::disconnect() {
+  if (is_connected_) {
+    is_connected_ = false;
+    LOG_INFO << "MySQL connection is now disconnected";
+  }
 }
 
-bool DatabaseConnection::initializeTables()
-{
-    return createUsersTable() &&
-           createRoomsTable() &&
-           createRoomMembersTable() &&
-           createMessagesTable() &&
-           createIndexes();
+bool DatabaseConnection::reconnect() {
+  LOG_INFO << "Reconnecting to MySQL server...";
+  disconnect();
+  return connect();
 }
 
-bool DatabaseConnection::createUsersTable()
-{
-    const char *create_users_table =
-        "CREATE TABLE IF NOT EXISTS users ("
-        "id TEXT PRIMARY KEY,"
-        "username TEXT UNIQUE NOT NULL,"
-        "password_hash TEXT NOT NULL,"
-        "created_at INTEGER NOT NULL);";
-    
-    return executeQuery(create_users_table);
-}
-
-bool DatabaseConnection::createRoomsTable()
-{
-    const char *create_rooms_table =
-        "CREATE TABLE IF NOT EXISTS rooms ("
-        "id TEXT PRIMARY KEY,"
-        "name TEXT UNIQUE NOT NULL,"
-        "description TEXT DEFAULT '',"
-        "creator_id TEXT NOT NULL,"
-        "created_at INTEGER NOT NULL,"
-        "FOREIGN KEY(creator_id) REFERENCES users(id) ON DELETE CASCADE);";
-    
-    return executeQuery(create_rooms_table);
-}
-
-bool DatabaseConnection::createRoomMembersTable()
-{
-    const char *create_room_members_table =
-        "CREATE TABLE IF NOT EXISTS room_members ("
-        "room_id TEXT NOT NULL,"
-        "user_id TEXT NOT NULL,"
-        "joined_at INTEGER NOT NULL,"
-        "PRIMARY KEY(room_id, user_id),"
-        "FOREIGN KEY(room_id) REFERENCES rooms(id) ON DELETE CASCADE,"
-        "FOREIGN KEY(user_id) REFERENCES users(id) ON DELETE CASCADE);";
-    
-    return executeQuery(create_room_members_table);
-}
-
-bool DatabaseConnection::createMessagesTable()
-{
-    const char *create_messages_table =
-        "CREATE TABLE IF NOT EXISTS messages ("
-        "id INTEGER PRIMARY KEY AUTOINCREMENT,"
-        "room_id TEXT NOT NULL,"
-        "user_id TEXT NOT NULL,"
-        "content TEXT NOT NULL,"
-        "timestamp INTEGER NOT NULL,"
-        "FOREIGN KEY(room_id) REFERENCES rooms(id) ON DELETE CASCADE,"
-        "FOREIGN KEY(user_id) REFERENCES users(id) ON DELETE CASCADE);";
-    
-    return executeQuery(create_messages_table);
-}
-
-bool DatabaseConnection::createIndexes()
-{
-    const char *create_username_index = "CREATE INDEX IF NOT EXISTS idx_users_username ON users(username);";
-    const char *create_room_name_index = "CREATE INDEX IF NOT EXISTS idx_rooms_name ON rooms(name);";
-    
-    return executeQuery(create_username_index) && executeQuery(create_room_name_index);
-}
+}  // namespace db

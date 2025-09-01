@@ -1,0 +1,6 @@
+# -----------------------------------------------------------------------------
+# .clang-format (Google Style with Comments)
+# 官方文档: https://clang.llvm.org/docs/ClangFormatStyleOptions.html
+# -----------------------------------------------------------------------------
+Language: Cpp
+BasedOnStyle: Google

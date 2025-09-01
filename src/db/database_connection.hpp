@@ -1,36 +1,45 @@
 #pragma once
 
-#include <string>
-#include <sqlite3.h>
+#include <mysql/mysql.h>
+
 #include <mutex>
-#include "../utils/logger.hpp"
+#include <string>
 
-// 数据库连接管理基类
-class DatabaseConnection
-{
-public:
-    explicit DatabaseConnection(const std::string &db_path);
-    virtual ~DatabaseConnection();//后面需要通过基类指针来删除一个派生类，所以需要将基类的析构函数声明为虚函数
+#include "utils/logger.hpp"
 
-    bool isConnected() const { return db_ != nullptr; }
-    sqlite3* getDb() const { return db_; }
+namespace db {
 
-    // 互斥锁访问接口
-    std::recursive_mutex& getMutex() { return mutex_; }
-
-protected:
-    bool executeQuery(const std::string &query);
-    bool initializeTables();
-    bool enableForeignKeys();
-
-    sqlite3 *db_;                // 指向sqlite3 结构体的指针
-    std::string db_path_;        // 数据库路径
-    mutable std::recursive_mutex mutex_; // 递归互斥锁
-
-private:
-    bool createUsersTable();
-    bool createRoomsTable();
-    bool createRoomMembersTable();
-    bool createMessagesTable();
-    bool createIndexes();
+// MySQL 连接配置结构
+struct MySQLConfig {
+  std::string host = "localhost";
+  unsigned int port = 4406;
+  std::string database = "swiftchat";
+  std::string username = "root";
+  std::string password = "";
 };
+
+// 一个数据库连接
+class DatabaseConnection {
+ public:
+  explicit DatabaseConnection(const MySQLConfig& config);
+  virtual ~DatabaseConnection();
+
+  // 禁止拷贝和移动，每个实例管理唯一的连接资源
+  DatabaseConnection(const DatabaseConnection&) = delete;
+  DatabaseConnection& operator=(const DatabaseConnection&) = delete;
+  DatabaseConnection(DatabaseConnection&&) = delete;
+  DatabaseConnection& operator=(DatabaseConnection&&) = delete;
+
+  bool connect();
+  bool reconnect();
+  void disconnect();
+  bool isConnected() const { return is_connected_; }
+  MYSQL* getRawConnection() const { return mysql_; }
+
+ protected:
+  MYSQL* mysql_;        // 指向MySQL 结构体的指针
+  MySQLConfig config_;  // MySQL 连接配置
+  bool is_connected_;
+};
+
+}  // namespace db
